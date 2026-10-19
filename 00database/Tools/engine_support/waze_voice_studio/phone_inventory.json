@@ -1,0 +1,238 @@
+{
+  "slots": [
+    {
+      "label": "All set. Let's go!",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "We're all set. Let's go!",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "Start driving",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "Let's get started - drive safe!",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "All set. Let's hit the road.",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "You ready? I am! Let's go!",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "We're ready to roll. Drive safe!",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "Have a pleasant drive!",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "Ok, here we go!",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Start of drive"
+    },
+    {
+      "label": "In 200 meters",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Distances"
+    },
+    {
+      "label": "In 400 meters",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Distances"
+    },
+    {
+      "label": "In 800 meters",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Distances"
+    },
+    {
+      "label": "In 1 kilometer",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Distances"
+    },
+    {
+      "label": "In 1.5 kilometers",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Distances"
+    },
+    {
+      "label": "Keep left",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Keep right",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Turn left",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Turn right",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Exit left",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Exit right",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Continue straight",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Make a U-turn",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "At the roundabout",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Take the first exit",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Take the second exit",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Take the third exit",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Take the fourth exit",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Take the fifth exit",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Take the sixth exit",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Take the seventh exit",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Instructions"
+    },
+    {
+      "label": "Police reported",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Reports"
+    },
+    {
+      "label": "Crash reported",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Reports"
+    },
+    {
+      "label": "Hazard reported",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Reports"
+    },
+    {
+      "label": "Heavy traffic reported",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Reports"
+    },
+    {
+      "label": "Red light camera reported",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Reports"
+    },
+    {
+      "label": "Speed camera reported",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Reports"
+    },
+    {
+      "label": "And then",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Other"
+    },
+    {
+      "label": "Rerouting",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Other"
+    },
+    {
+      "label": "You've arrived",
+      "max_seconds": 6.0,
+      "recorded": false,
+      "section": "Other"
+    }
+  ]
+}

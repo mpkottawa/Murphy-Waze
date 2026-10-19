@@ -1,0 +1,14 @@
+# Changelog
+
+## 1.0.00
+
+First public Windows x64 release under the Waze Voice Studio name.
+
+- Guided script/reference workflow with two audition clips and a locked approved voice.
+- Generation and resumable repair of 39 prompts without rewriting character lines.
+- Live reference-scan and test-duration indicators; checked short-reference combination.
+- MP3/WAV mapping and preview, compatible archive building and verified Waze uploads.
+- Download-checked English online voice catalog and optional Android USB link files.
+- Per-user online Windows installer, isolated runtimes, dependency repair and installation guide.
+
+Initial-release limitations: unsigned installer; internet required for dependencies/models; VoiceStudio first-run setup and personal Codex login are interactive; no Windows ARM/macOS/Linux package. Waze's unofficial API and online source availability can change.

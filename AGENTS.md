@@ -1,0 +1,1 @@
+Windows x64 desktop app. Version source: VERSION.txt. First public release: 1.0.00. Preserve exact script wording during repair, voice approval across imports, and explicit final upload. Never commit recordings, credentials, caches or personal settings. Build with packaging/build.ps1.

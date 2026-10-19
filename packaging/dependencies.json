@@ -1,0 +1,42 @@
+{
+  "ffmpeg.zip": {
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
+    "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+    "bytes": 114768076
+  },
+  "adb.zip": {
+    "url": "https://dl.google.com/android/repository/platform-tools_r36.0.2-win.zip",
+    "sha256": "b024d4f319d6ad3004de1ba7b96a5c7c5f3512e8b14126308d598b4ab93dcead",
+    "bytes": 7708640
+  },
+  "codex.zip": {
+    "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-x86_64-pc-windows-msvc.exe.zip",
+    "sha256": "dabdb4d16aaf10fea40b74811c96efddcd9138f122163b69ed604fcb3eb704c3",
+    "bytes": 167080091
+  },
+  "yt-dlp.exe": {
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+    "sha256": "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a",
+    "bytes": 17840399
+  },
+  "VoiceStudio.exe": {
+    "url": "https://github.com/debpalash/VoiceStudio/releases/download/v0.5.6/VoiceStudio-Electron-0.5.6-win-x64.exe",
+    "sha256": "3d7ac1d6b54e7854ca7fff4dda838e402d1c5d31acc9656b1838432e29a97624",
+    "bytes": 214447484
+  },
+  "deno.zip": {
+    "url": "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip",
+    "sha256": "a0c3101b4158d1dfb7d6a78a7bf0f3de80c96bb423c152beec8beb22786f2238",
+    "bytes": 42630221
+  },
+  "vc_redist.exe": {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/990c720a-46ce-4dc7-87b9-c2eb615d34b9/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe",
+    "sha256": "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b",
+    "bytes": 25635768
+  },
+  "python.tar.gz": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.11.17%2B20261013-x86_64-pc-windows-msvc-install_only.tar.gz",
+    "sha256": "7616ab1f74aab975bd91eb0a657a74a092a63a46cac38c5f3f9415c79fd781f5",
+    "bytes": 48191837
+  }
+}

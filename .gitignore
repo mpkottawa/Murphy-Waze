@@ -1,0 +1,13 @@
+build/
+dist/
+.runtime/
+00database/Tools/.venv/
+00database/Tools/.worker/
+00database/Tools/vendor/
+**/__pycache__/
+*.pyc
+Voices/
+00database/*.json
+00database/Online recovered/
+00database/Created packs/
+*.log
