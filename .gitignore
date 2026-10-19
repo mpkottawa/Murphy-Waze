@@ -4,6 +4,7 @@ dist/
 00database/Tools/.venv/
 00database/Tools/.worker/
 00database/Tools/vendor/
+00database/Tools/models/
 **/__pycache__/
 *.pyc
 Voices/

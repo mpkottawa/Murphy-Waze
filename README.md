@@ -1,8 +1,8 @@
 # Waze Voice Studio
 
-**Create, preview, back up and upload Waze voice packs on Windows.** First public release: **1.0.00**.
+**Create, preview, back up and upload Waze voice packs on Windows.** Current release: **1.0.01**.
 
-[Download Windows installer](https://github.com/mpkottawa/Waze-Voice-Studio/releases/download/v1.0.00/Waze-Voice-Studio-1.0.00-Windows-x64-Setup.exe) | [Releases](https://github.com/mpkottawa/Waze-Voice-Studio/releases) | [Report a problem](https://github.com/mpkottawa/Waze-Voice-Studio/issues)
+[Download Windows installer](https://github.com/mpkottawa/Waze-Voice-Studio/releases/download/v1.0.01/Waze-Voice-Studio-1.0.01-Windows-x64-Setup.exe) | [Releases](https://github.com/mpkottawa/Waze-Voice-Studio/releases) | [Report a problem](https://github.com/mpkottawa/Waze-Voice-Studio/issues)
 
 Create a script, find or supply reference audio, approve two test clips, and generate all 39 navigation prompts. You can also load existing MP3/WAV recordings or working English voices from the online catalog. Preview prompts, build a compatible pack and explicitly upload it to receive a Waze installation link.
 
@@ -12,20 +12,20 @@ Create a script, find or supply reference audio, approve two test clips, and gen
 
 - **Windows 10 or 11, Intel/AMD x64.** This release does not support macOS, Linux or Windows ARM.
 - Internet for setup, model downloads, online searches and uploads.
-- **20 GB free disk space recommended**, plus room for recordings. Large model choices and caches can require more.
+- **30 GB free disk space recommended**, plus room for recordings. Large model choices and caches can require more.
 - A GPU is optional; CPU generation can be much slower. NVIDIA acceleration depends on VoiceStudio's engine and driver support. See [VoiceStudio Windows requirements](https://github.com/debpalash/VoiceStudio/blob/v0.5.6/docs/install/windows.md).
 - Your own Codex login for automatic AI script writing/source review. Manual scripts and supplied references can be used without automatic AI review.
 
 ### Install using one setup download
 
-1. Download **Waze-Voice-Studio-1.0.00-Windows-x64-Setup.exe** from the [1.0.00 release](https://github.com/mpkottawa/Waze-Voice-Studio/releases/tag/v1.0.00).
+1. Download **Waze-Voice-Studio-1.0.01-Windows-x64-Setup.exe** from the [1.0.01 release](https://github.com/mpkottawa/Waze-Voice-Studio/releases/tag/v1.0.01).
 2. Run it and choose a local, writable folder. Default: `%LOCALAPPDATA%\Programs\Waze Voice Studio`. Avoid mapped/network drives.
 3. Leave the dependency window open. Setup automatically downloads verified Python, FFmpeg/FFplay, Android Platform Tools, Codex CLI, Deno, yt-dlp and the separate VoiceStudio application. It creates isolated Python environments and installs audio analysis packages. Microsoft's C++ runtime may request administrator approval if missing.
-4. **Open VoiceStudio once** and complete its first-run runtime and model setup. Use the **OmniVoice** generation engine with its local API at `http://127.0.0.1:3900`. Its model weights are downloaded separately, not included in the small Waze setup executable.
-5. For automatic AI source review, open **Start > Waze Voice Studio > Sign in to Codex** and complete the browser login using your own account. See [official authentication guidance](https://developers.openai.com/codex/auth/). Setup does not supply or copy credentials.
+4. Setup automatically prepares VoiceStudio, selects a CPU or NVIDIA runtime when a new environment is needed, downloads missing required models, configures OmniVoice and verifies that it initializes. It also prepares Whisper and speaker-analysis models. **You do not need to open VoiceStudio to complete setup.** Its local API uses `http://127.0.0.1:3900`.
+5. For automatic AI source review, open **Start > Waze Voice Studio > Sign in to Codex** only if setup says a login is missing. Complete the browser login using your own account; existing sign-ins are reused. See [official authentication guidance](https://developers.openai.com/codex/auth/). Setup does not supply or copy credentials.
 6. Open **Waze Voice Studio** from the desktop or Start menu.
 
-This is an **all-in-one online installer**, not an offline bundle: one setup file installs the dependencies, while sign-in and VoiceStudio's model selection require your own first-run interaction. Large downloads may take many minutes. Speech transcription and speaker model weights also download on first use.
+This is an **all-in-one online installer**, not an offline bundle: one setup file prepares the dependencies, VoiceStudio runtime and required models. Only personal account authentication (when needed) and Windows administrator approval for a missing C++ runtime require your interaction. Large downloads can take many minutes; keep the setup window open. Setup finishes only after required imports and model initialization pass.
 
 This initial installer is **not code-signed**, so Windows may show an unrecognized publisher notice. Use only this repository's release assets and compare the installer SHA-256 with `SHA256SUMS.txt` on the release page.
 
@@ -33,7 +33,7 @@ This initial installer is **not code-signed**, so Windows may show an unrecogniz
 
 Use **Start > Waze Voice Studio > Repair dependency setup**. Valid cached downloads are reused. The log is `.runtime\setup.log` inside the installation folder. A changed download/checksum stops setup; report the message through Issues.
 
-An existing VoiceStudio installation in its default per-user folder is reused. Custom VoiceStudio install locations are not detected by this first release; install it at the default location. Its existing voices/models are not removed.
+Setup checks actual tool versions, Python requirements/imports and dependency health before installing. Healthy components are logged as **SKIP**, without re-extracting tool archives or running pip installs. Existing VoiceStudio installations are detected in conventional locations and Windows uninstall records; its custom runtime location is respected. For an unregistered installation, set `WVS_VOICESTUDIO_EXE` to its full executable path before running setup. Automatic runtime creation is pinned to VoiceStudio 0.5.6; a compatible running newer service can be reused, but an uninitialized unsupported version is reported rather than modified. Existing recordings, profiles and model caches are retained. A running compatible backend is reused and is never stopped by setup. A different/incompatible runtime is reported rather than silently overwritten.
 
 ## Create a new voice
 
@@ -68,7 +68,7 @@ Check every prompt/direction before using a pack. Missing prompts can use Waze's
 
 Voices live in `Voices\<name>\Runs\<run>`; script variants live in each voice's `Scripts` folder. Imported archives/exports live under `00database`. Back up **Voices** and original imported audio before changing installations.
 
-Data lives beside the app in its writable per-user folder. Updates in the same folder replace app source, not recordings. Uninstall removes installed source/shortcuts but preserves generated voices, runtimes and caches; remove the remaining folder yourself only after backing up needed files. The separate VoiceStudio application and model cache have their own uninstall process.
+Private Python environments remain isolated from unrelated system Python installations. Data lives beside the app in its writable per-user folder. Updates in the same folder replace app source, not recordings. Uninstall removes installed source/shortcuts but preserves generated voices, runtimes and caches; remove the remaining folder yourself only after backing up needed files. The separate VoiceStudio application and model cache have their own uninstall process.
 
 Existing development libraries are not automatically relocated. Use **Resume a saved workflow** or load a pack from the original location, and retain a backup.
 

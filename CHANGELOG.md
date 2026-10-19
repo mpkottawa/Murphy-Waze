@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.01
+
+- Automatic VoiceStudio first-run runtime, required model download and model initialization.
+- Detect/reuse existing VoiceStudio and custom runtime locations; choose CPU or NVIDIA for a new environment.
+- Skip healthy tools, Python packages, cached models and existing account sign-in.
+- Prepare reference-analysis models during installation; fix fresh speaker-model setup on Windows.
+- Preserve interrupted-install state, report failures, and write readiness only after verification.
+
 ## 1.0.00
 
 First public Windows x64 release under the Waze Voice Studio name.

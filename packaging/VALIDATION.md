@@ -1,13 +1,14 @@
-# 1.0.00 release validation
+# 1.0.01 release validation
 
-Tested on the maintainer's Windows 11 x64 computer, in a separate local installation folder containing spaces, using the downloaded standalone Python and new private environments.
+Tested on the maintainer's Windows 11 x64 computer with a separate local installation folder containing spaces.
 
-- 69 regression tests passed using the private audio runtime.
-- Empty-library desktop startup and shutdown passed.
-- GUI/uploader dependencies and audio-processing imports passed; both environments passed `pip check`.
-- Codex 0.163.0 main executable and helper extraction verified; FFmpeg 9.0.2, FFplay, ADB and Deno present.
-- Compatible archive built from synthetic audio with all 39 expected prompt files and size below the upload budget.
-- Dependency manifest hashes, sanitized prompt catalog and Python source compilation checked.
-- Windows setup compiler completed successfully. Setup and repair completed using verified cached dependency downloads.
+- 69 application regression tests passed in the private audio runtime.
+- 17 installer tests cover fresh CPU setup planning, healthy-environment skips, interrupted installs, missing/failed model downloads, initialization failures, and occupied local ports.
+- Complete 1.0.01 installer exited successfully. Existing components were detected and skipped after actual version/import/dependency checks, without running pip installs or extracting tool archives again.
+- Reused the existing VoiceStudio backend and model cache. Actual OmniVoice initialization passed; a second run skipped initialization once the model was loaded.
+- Built a separate CPU VoiceStudio environment from the bundled frozen dependency graph, installed CPU PyTorch 2.8, started an isolated backend on port 3911 with separate data, and successfully loaded OmniVoice. An interrupted attempt retained its marker/cache for recovery. Verified the owned backend tree stopped afterward while the existing port-3900 GPU backend stayed available.
+- Fixed canonical runtime paths for Windows AppData virtualization and allowed longer initial engine checks during first model preload.
+- Whisper base/small.en and SpeechBrain ECAPA initialized successfully. Fixed fresh Windows ECAPA setup to avoid symlinks and deprecated Hub authentication arguments; complete cached speaker files can be used without a network lookup.
+- Empty-library desktop startup passed. Source/catalog/dependency pin validation and installer compilation passed.
 
-Limits: this is not a fresh Windows VM certification. The test machine already had VoiceStudio and the Microsoft C++ runtime, so those installers' clean-machine paths were not exercised end to end. VoiceStudio first-run model setup and personal Codex login remain interactive. No new Waze upload, phone installation or generated-character quality test was performed for this packaging release. Existing app behavior is covered by regression checks; actual Waze playback still requires a phone test.
+This is not a fresh Windows VM certification. The machine already had the VoiceStudio desktop app and Microsoft's C++ runtime; those binary installers were reused. No personal account login was automated and no new voice pack was uploaded or installed on a phone. Waze playback/voice quality remains a separate phone check. Internet is required for missing packages/model weights; model initialization must succeed before setup reports ready.

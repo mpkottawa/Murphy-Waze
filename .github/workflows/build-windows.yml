@@ -15,6 +15,8 @@ jobs:
         run: ./packaging/setup.ps1 -CheckOnly
       - name: Validate release source and catalog
         run: python packaging/validate.py
+      - name: Test automatic setup planning and failures
+        run: python -m unittest discover -s packaging -p test_setup.py
       - name: Build
         shell: powershell
         run: ./packaging/build.ps1

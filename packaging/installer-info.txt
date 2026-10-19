@@ -1,10 +1,10 @@
-Waze Voice Studio 1.0.00 - Windows x64
+Waze Voice Studio 1.0.01 - Windows x64
 
 This single setup program installs the app and automatically downloads and installs its dependencies. An internet connection is required; it is not an offline bundle.
 
-Allow at least 20 GB free disk space for the separate Python runtimes, VoiceStudio, caches and AI models, plus space for your recordings. Setup can take a long time on slow connections.
+Allow at least 30 GB free disk space for the separate Python runtimes, VoiceStudio, caches and AI models, plus space for your recordings. Setup can take a long time on slow connections.
 
-VoiceStudio has its own first-run runtime/model setup. Complete that once after installation. Automatic source review uses Codex and requires signing into your own account. Audio generation runs locally in VoiceStudio.
+Setup automatically prepares VoiceStudio and all models required by Waze Voice Studio, verifies model initialization, and skips components that already pass compatibility and health checks. Automatic AI review uses your own Codex login; existing logins are reused. Audio generation runs locally in VoiceStudio.
 
 Python and media tools are kept private to this application. Microsoft's C++ runtime may request administrator approval. VoiceStudio is a separate application; uninstalling Waze Voice Studio will not remove it or your saved voices.
 

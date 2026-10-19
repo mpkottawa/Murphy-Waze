@@ -36,6 +36,7 @@ Source: "..\00database\Tools\engine_support\*"; DestDir: "{app}\00database\Tools
 Source: "..\00database\Tools\reference\file_upload.py"; DestDir: "{app}\00database\Tools\reference"; Flags: ignoreversion
 Source: "setup.ps1"; DestDir: "{app}\packaging"; Flags: ignoreversion
 Source: "dependencies.json"; DestDir: "{app}\packaging"; Flags: ignoreversion
+Source: "*.py"; DestDir: "{app}\packaging"; Excludes: "test_*"; Flags: ignoreversion
 [Icons]
 Name: "{group}\Waze Voice Studio"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\Open Waze Voice Studio.ps1"""; WorkingDir: "{app}"
 Name: "{group}\Repair dependency setup"; Filename: "{app}\Repair dependency setup.cmd"; WorkingDir: "{app}"
@@ -63,6 +64,6 @@ begin
     if DependencySetupFailed then
       SuppressibleMsgBox('The app files were installed, but dependency setup did not finish. Use Repair dependency setup from the Start menu to retry. Details are in .runtime\setup.log inside your installation folder.', mbError, MB_OK, IDOK)
     else
-      SuppressibleMsgBox('Setup finished. Open VoiceStudio to finish its first-run runtime and model setup. For automatic reference review, use Sign in to Codex in the Start menu. Then open Waze Voice Studio.', mbInformation, MB_OK, IDOK);
+      SuppressibleMsgBox('Setup finished. VoiceStudio and the required models are ready. Open Waze Voice Studio. If your account is not already signed in, use Sign in to Codex in the Start menu for automatic AI reference review.', mbInformation, MB_OK, IDOK);
   end;
 end;

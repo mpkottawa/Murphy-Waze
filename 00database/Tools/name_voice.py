@@ -135,7 +135,8 @@ def ensure_engine(file, say):
     try:
         client.connect(); return
     except Exception:
-        project=Path.home()/'AppData/Roaming/VoiceStudio/runtime/project'
+        from voicestudio_paths import locations
+        exe, project = locations()
         runtime=project/'.venv/Scripts/python.exe'
         if runtime.is_file() and (project/'backend/main.py').is_file():
             say('Starting the existing VoiceStudio backend on localhost (no reinstall)…')
@@ -144,7 +145,6 @@ def ensure_engine(file, say):
                                  env={**os.environ,'OMNIVOICE_BIND_HOST':'127.0.0.1','OMNIVOICE_PORT':'3900','PYTHONIOENCODING':'utf-8'},
                                  creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),stdout=log,stderr=log)
         else:
-            exe = Path.home()/'AppData/Local/Programs/VoiceStudio/VoiceStudio.exe'
             if not exe.exists():
                 raise ValueError('Open VoiceStudio to continue. No Chatterbox fallback was used.')
             say('Starting VoiceStudio; waiting for its local engine…')

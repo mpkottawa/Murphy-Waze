@@ -273,7 +273,8 @@ class AddVoiceWizard(ttk.Frame):
         self.log.configure(state='disabled')
 
     def open_voicestudio(self):
-        path = Path.home()/'AppData/Local/Programs/VoiceStudio/VoiceStudio.exe'
+        from voicestudio_paths import locations
+        path, _ = locations()
         if not path.is_file():
             messagebox.showerror('VoiceStudio missing', 'Open your VoiceStudio installation manually before generating.', parent=self)
             return

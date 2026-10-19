@@ -85,10 +85,22 @@ def _speaker_model(work_dir: Path):
             run_opts={"device": "cpu"},
             local_strategy=LocalStrategy.NO_LINK,
         )
+    from huggingface_hub import snapshot_download
+    required = ['hyperparams.yaml', 'embedding_model.ckpt', 'mean_var_norm_emb.ckpt',
+                'classifier.ckpt', 'label_encoder.txt']
+    try:
+        snapshot = snapshot_download('speechbrain/spkrec-ecapa-voxceleb',
+                                     allow_patterns=required, local_files_only=True)
+        if not all((Path(snapshot)/name).is_file() and (Path(snapshot)/name).stat().st_size > 0
+                   for name in required):
+            raise FileNotFoundError('Incomplete cached speaker model')
+    except (OSError, ValueError):
+        snapshot = snapshot_download('speechbrain/spkrec-ecapa-voxceleb', allow_patterns=required)
     return EncoderClassifier.from_hparams(
-        source="speechbrain/spkrec-ecapa-voxceleb",
+        source=snapshot,
+        overrides={"pretrained_path": snapshot},
         savedir=str(work_dir / "ecapa-model"),
-        local_strategy=LocalStrategy.COPY,
+        local_strategy=LocalStrategy.NO_LINK,
         run_opts={"device": "cpu"},
     )
 
