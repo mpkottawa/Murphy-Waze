@@ -15,4 +15,9 @@ def result_for_name(archive,name):
 def suggested_name(archive):
     preference=Path(archive).parent/'display-name.json'
     if preference.is_file():return json.loads(preference.read_text(encoding='utf8'))['name']
+    for parent in list(Path(archive).parents)[:6]:
+        workflow=parent/'workflow.json'
+        if workflow.is_file():
+            name=json.loads(workflow.read_text(encoding='utf-8-sig')).get('name','').strip()
+            if name:return name
     return json.loads((Path(archive).parent/'pack.json').read_text(encoding='utf-8-sig'))['name']

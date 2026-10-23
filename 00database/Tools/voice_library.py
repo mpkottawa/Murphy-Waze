@@ -18,6 +18,32 @@ def save(path, data):
         try: link_generated_prompts(path,data)
         except (OSError,ValueError,subprocess.SubprocessError):pass  # Convenience links must not interrupt generation.
 
+
+def recover_reference_path(state):
+    """Repair moved references only when their bytes match the saved fingerprint."""
+    old=Path(state.get('master') or '')
+    if old.is_file() or not state.get('master_sha256') or not state.get('pack'):return False
+    pack=Path(state['pack']);manifest=pack/'pack.json'
+    if not manifest.is_file():return False
+    metadata=json.loads(manifest.read_text(encoding='utf8'))
+    reference=(pack/metadata.get('reference_file','')).resolve()
+    if not reference.is_relative_to(pack.resolve()) or not reference.is_file():return False
+    if hashlib.sha256(reference.read_bytes()).hexdigest()!=state['master_sha256']:return False
+    state['master']=str(reference)
+    if state.get('analysis')==str(old) or not Path(state.get('analysis') or '').is_file():state['analysis']=str(reference)
+    for item in [state.get('selected_reference',{}),state.get('auto_scene_selection',{}),*state.get('candidates',[])]:
+        if item.get('file')==str(old):item['file']=str(reference)
+    return True
+
+
+def relocate_reference_paths(state,old,new):
+    old,new=Path(old).resolve(),Path(new).resolve()
+    for item in [state,state.get('selected_reference',{}),state.get('auto_scene_selection',{}),*state.get('candidates',[])]:
+        for key in ('master','analysis','file'):
+            value=item.get(key)
+            if isinstance(value,str) and Path(value).resolve().is_relative_to(old):
+                item[key]=str(new/Path(value).resolve().relative_to(old))
+
 def link_generated_prompts(file,state):
     """Folder junctions expose original audio without copying or moving it."""
     if os.name!='nt' or state.get('deleted') or not state.get('pack') or not state.get('character_folder'):return
@@ -53,6 +79,38 @@ def new_session(name, description='', root=VOICES):
     session=folder/'Runs'/uuid.uuid4().hex[:8];session.mkdir(parents=True)
     return session/'workflow.json',folder
 
+def alternative_reference(state,file):
+    """Preserve the audition before creating a separate reference-search run."""
+    from voice_backup import backup
+    file=Path(file)
+    snapshot=backup(state,file)
+    if snapshot is None:
+        snapshot=backup(state,file,Path(state['character_folder'])/'Reference backups')
+    if snapshot is None:raise ValueError('Current reference could not be backed up. The current run was kept.')
+    allowed=('name','description','script','script_title','script_file','script_selected','ai_reply_loaded',
+        'script_character','script_ideas','script_options','research','character_folder','library','workflow_mode','source_mode',
+        'show_folder','youtube_kind','youtube_query','reference_search_strategy','local_review_model',
+        'reference_speaker_model','reference_identity_kind','reference_scene_hint',
+        'reference_target_min_seconds','reference_target_max_seconds')
+    fresh={k:state[k] for k in allowed if k in state}
+    fresh.update(approved=False,voice_reapproval_required=True,phase='draft',
+        previous_reference_workflow=str(file),previous_reference_backup=str(snapshot),youtube_url='',
+        youtube_attempted_ids=list(dict.fromkeys(state.get('youtube_attempted_ids',[])+
+            [x['id'] for x in state.get('youtube_sources',[]) if x.get('id')])))
+    # Keep scripts independent of cloud mode: a replacement reference never needs a new script.
+    selected=state.get('selected_reference') or {}
+    fresh['excluded_reference_windows']=[dict(source_file=x['source_file'],start=x['source_start'],end=x['source_end']) for x in selected.get('segments',[selected]) if all(k in x for k in ('source_file','source_start','source_end'))]
+    fresh['master']=''
+    fresh.setdefault('library',str(state['character_folder']))
+    fresh['script_selected']=True
+    from auto_scene import key
+    fresh['youtube_search_key']=key([fresh['name'],fresh.get('youtube_query',''),'',fresh.get('youtube_kind','')])
+    target,folder=new_session(state['name'],root=Path(state['character_folder']).parent)
+    save(target,fresh)
+    (target.parent/'SCRIPT.txt').write_text(fresh['script'],encoding='utf8')
+    return target,snapshot
+
+
 def save_named_script(state, file, new=False):
     """Numbered character-scoped scripts; allocation never overwrites a variant."""
     character=Path(state.get('character_folder') or file.parents[2])
@@ -82,10 +140,10 @@ def fork_script(state, title, script, root=VOICES, script_file=None):
         import subprocess
         analysis=master
         duration=float(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',str(master)],creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0)))
-        if not 10<=duration<=20.001:raise ValueError('Select a 10–20-second reference window before creating a new script from this older pack.')
+        if not 6<=duration<=20.001:raise ValueError('Select a 6–20-second reference window before creating a new script from this older pack.')
         start,end=0,duration
     file,character=new_session(state['name'],root=root)
-    variant={k:state[k] for k in ('name','description','script_ideas','script_prompt_copied','ai_reply_loaded','start','end','master_sha256','selected_reference','reference_warning') if k in state}
+    variant={k:state[k] for k in ('name','description','script_ideas','script_options','script_prompt_copied','ai_reply_loaded','start','end','master_sha256','selected_reference','reference_warning') if k in state}
     for key,source in [('master',master),('analysis',analysis)]:
         dest=file.parent/'Reference'/(hashlib.sha256(source.read_bytes()).hexdigest()[:12]+'-'+source.name);dest.parent.mkdir(exist_ok=True)
         if not dest.exists():shutil.copy2(source,dest)
@@ -139,6 +197,51 @@ def reusable_voice(folder):
     if not candidates:raise ValueError('No usable saved reference found in this character folder. Create or select a reference first.')
     return max(candidates)[3]
 
+def reuse_approved_reference(state,file):
+    """Reuse only a verified, explicitly approved voice in this character folder."""
+    if state.get('previous_reference_workflow') or state.get('force_new_reference'):
+        return False  # Explicit Find different reference must never reuse the rejected audition.
+    if Path(state.get('master') or '').is_file():
+        return False  # Keep a selected reference, including an unapproved audition.
+    folder=Path(state.get('character_folder') or Path(file).parents[2]).resolve()
+    choices=[]
+    for candidate in folder.glob('Runs/*/workflow.json'):
+        if candidate.resolve()==Path(file).resolve():continue
+        try:
+            saved=json.loads(candidate.read_text(encoding='utf8'))
+            if saved.get('deleted') or not voice_is_approved(saved):continue
+            if Path(saved.get('character_folder') or '').resolve()!=folder:continue
+            analysis=Path(saved.get('analysis') or '')
+            if not analysis.is_file() or saved.get('start') is None or saved.get('end') is None:continue
+            choices.append((candidate.stat().st_mtime,candidate,saved))
+        except (OSError,ValueError,TypeError):continue
+    if not choices:return False
+    _,candidate,saved=max(choices,key=lambda row:row[0])
+    # Copy the exact selected input, retaining the approved window and hash.
+    copied={}
+    for key in ('master','analysis'):
+        source=Path(saved[key]);fingerprint=hashlib.sha256(source.read_bytes()).hexdigest()
+        destination=Path(file).parent/'Reference'/(fingerprint[:12]+'-'+source.name)
+        destination.parent.mkdir(exist_ok=True)
+        shutil.copy2(source,destination)
+        if hashlib.sha256(destination.read_bytes()).hexdigest()!=fingerprint:
+            raise ValueError('Saved reference copy did not verify.')
+        copied[key]=str(destination)
+    state.update(copied)
+    for key in ('master_sha256','start','end','selected_reference','reference_warning'):
+        if key in saved:state[key]=saved[key]
+    state.update(approved=True,voice_reapproval_required=False,phase='voice_locked',
+                 reused_reference_workflow=str(candidate),approval_tests_pack=approved_test_pack(dict(saved,approved=True)))
+    state.pop('signature',None)
+    state['pack']=None
+    profile=Path(saved.get('pack') or '')/'voicestudio-profile.json'
+    if profile.is_file():
+        target=Path(file).parent/'voicestudio-profile.json';shutil.copy2(profile,target)
+        state['voice_profile_cache']=str(target)
+    save(file,state)
+    return True
+
+
 def archive_run(file, root=VOICES):
     """Soft-delete a library entry without moving shared reference/audio paths."""
     file=Path(file).resolve();root=Path(root).resolve()
@@ -168,6 +271,32 @@ def remember_voice_approval(state,file):
     state.pop('voice_reapproval_required', None)
     data['references'][key]={'tests_pack':state.get('pack'),'status':'approved','master_sha256':fingerprint,'start':state.get('start'),'end':state.get('end'),'workflow':str(file),'approved_at':datetime.now(timezone.utc).isoformat()}
     save(path,data)
+    backup_approved_reference(state,file,key)
+    from voice_backup import automatic_backup
+    automatic_backup(state,Path(file))
+
+
+def backup_approved_reference(state,file,key):
+    """Keep the exact prepared reference independently of disposable run folders."""
+    pack=Path(state.get('pack') or '')
+    manifest=pack/'pack.json'
+    if not manifest.is_file():return None
+    info=json.loads(manifest.read_text(encoding='utf8'))
+    if not info.get('reference_file'):return None
+    source=(pack/info['reference_file']).resolve()
+    if not source.is_relative_to(pack.resolve()) or not source.is_file():
+        raise ValueError('Prepared reference is missing or outside its pack.')
+    digest=hashlib.sha256(source.read_bytes()).hexdigest()
+    folder=Path(state['character_folder'])/'References'/key
+    folder.mkdir(parents=True,exist_ok=True)
+    target=folder/('reference'+source.suffix.lower())
+    if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest()!=digest:
+        raise ValueError('Saved reference backup differs; refusing to overwrite it.')
+    if not target.exists():shutil.copy2(source,target)
+    save(folder/'reference.json',dict(name=state['name'],audio=target.name,sha256=digest,
+         approved=True,workflow=str(file),source=state.get('selected_reference'),
+         original_start=state.get('start'),original_end=state.get('end')))
+    return folder
 
 def voice_is_approved(state):
     if state.get('voice_reapproval_required'):return False

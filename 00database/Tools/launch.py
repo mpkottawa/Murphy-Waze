@@ -33,4 +33,4 @@ if __name__ == '__main__':
             log = ROOT / '.runtime' / 'startup.log'
             log.parent.mkdir(parents=True, exist_ok=True)
             log.write_text(traceback.format_exc(), encoding='utf-8')
-            messagebox.showerror('Waze Voice Studio', f'Unable to start. Run Repair dependency setup from the Start menu.\n\nDetails: {log}')
+            messagebox.showerror('Murphy Waze', f'Unable to start. Run Repair dependency setup from the Start menu.\n\nDetails: {log}')

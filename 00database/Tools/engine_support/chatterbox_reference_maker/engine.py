@@ -70,6 +70,9 @@ def _extract_mono(source: Path, destination: Path, sample_rate: int) -> None:
     _run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source), "-vn", "-ac", "1", "-ar", str(sample_rate), "-c:a", "pcm_s16le", str(destination)])
 
 
+from functools import lru_cache
+
+@lru_cache(maxsize=2)
 def _speaker_model(work_dir: Path):
     import torch
     from speechbrain.inference.speaker import EncoderClassifier

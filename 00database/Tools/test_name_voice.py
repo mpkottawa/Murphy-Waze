@@ -34,17 +34,11 @@ class NameTests(unittest.TestCase):
             (person/'Other reference.wav').touch()
             self.assertIsNone(nv.local_reference('Randy Savage',root))
 
-    def test_writer_no_shell_readonly_and_schema(self):
-        with tempfile.TemporaryDirectory() as temp:
-            file=Path(temp)/'workflow.json'
-            def fake(args, file, timeout, input_text):
-                self.assertIn('read-only',args)
-                self.assertIn('--ignore-user-config',args)
-                self.assertIn('features.shell_tool=false',args)
-                self.assertIn('untrusted data',input_text)
-                Path(args[args.index('-o')+1]).write_text(json.dumps(plan()))
-            with patch.object(nv.shutil,'which',return_value='codex'),patch.object(nv,'checked_run',side_effect=fake):
-                self.assertEqual(nv.draft('Randy Savage',[],file),plan())
+    def test_script_must_be_supplied_without_cloud_calls(self):
+        with patch.object(nv,'checked_run') as child:
+            with self.assertRaisesRegex(ValueError,'Paste your ChatGPT script'):
+                nv.draft('Randy Savage',[],Path('workflow.json'))
+            child.assert_not_called()
 
     def test_build_requires_complete_and_never_uploads(self):
         with tempfile.TemporaryDirectory() as temp:

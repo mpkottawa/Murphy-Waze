@@ -1,116 +1,78 @@
-"""Non-destructive USB backup and recovery of accessible Waze audio. Python 3.11+."""
-import argparse
+"""Portable, hash-verified reference and generated-audio snapshots."""
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
-import subprocess
-import tarfile
-import io
-import urllib.request
-import urllib.error
-import urllib.parse
 import uuid
-import zipfile
 
+SETTINGS=Path(__file__).resolve().parent.parent/'voice-backup-settings.json'
 
-def manifest(root):
-    return [{"path": str(p.relative_to(root)), "bytes": p.stat().st_size,
-             "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
-            for p in sorted(root.rglob("*")) if p.is_file()]
+def digest(path):
+    with path.open('rb') as handle:
+        return hashlib.file_digest(handle,'sha256').hexdigest()
 
+def backup(state,file,root=None):
+    if root is None:
+        if not SETTINGS.is_file():return None
+        root=json.loads(SETTINGS.read_text(encoding='utf8'))['directory']
+    root=Path(root)
+    name=re.sub(r'[<>:"/\\|?*\x00-\x1f]','_',state.get('name') or file.parents[2].name).strip(' .') or 'Voice'
+    if name.upper() in {'CON','PRN','AUX','NUL',*(f'COM{i}' for i in range(1,10)),*(f'LPT{i}' for i in range(1,10))}:name='_'+name
+    pack=Path(state.get('pack') or '')
+    info=json.loads((pack/'pack.json').read_text(encoding='utf8')) if (pack/'pack.json').is_file() else {}
+    files={}
+    ref=info.get('reference_file')
+    if ref:
+        source=(pack/ref).resolve()
+        if not source.is_relative_to(pack.resolve()):raise ValueError('Reference escapes its pack')
+        if source.is_file():files['reference'+source.suffix.lower()]=source
+    if not files:
+        master=Path(state.get('master') or '')
+        if master.is_file() and master.suffix.lower() in ('.wav','.mp3','.flac','.ogg','.m4a'):
+            files['reference'+master.suffix.lower()]=master
+    if not files:return None
+    for folder in ('audio','reference','Waze MP3'):
+        for source in (pack/folder).rglob('*') if (pack/folder).is_dir() else []:
+            if source.is_file() and not source.is_symlink():files['pack/'+source.relative_to(pack).as_posix()]=source
+    for name_meta in ('pack.json','voicestudio-profile.json','transcript-check.json','SCRIPT.txt'):
+        source=pack/name_meta
+        if source.is_file():files['pack/'+name_meta]=source
+    for i,part in enumerate(state.get('selected_reference',{}).get('segments',[]),1):
+        source=Path(part.get('file') or '')
+        if source.is_file():files[f'fragments/{i:02}'+source.suffix.lower()]=source
+    hashes={key:digest(source) for key,source in sorted(files.items())}
+    identity=hashlib.sha256(json.dumps(hashes,sort_keys=True).encode()).hexdigest()[:12]
+    destination=root/name/(file.parent.name+'-'+identity)
+    if destination.exists():
+        for key,value in hashes.items():
+            if digest(destination/key)!=value:raise ValueError('Existing backup failed verification: '+str(destination/key))
+        return destination
+    temporary=destination.parent/('.pending-'+uuid.uuid4().hex)
+    temporary.mkdir(parents=True,exist_ok=False)
+    try:
+        for key,source in files.items():
+            target=temporary/key;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
+            if digest(target)!=hashes[key]:raise ValueError('Backup copy failed verification: '+key)
+        metadata=dict(format='waze-voice-reference-backup-v1',name=state.get('name'),approved=state.get('approved',False),
+            reference=next(k for k in files if k.startswith('reference.')),sha256=hashes,
+            engine=info.get('engine'),model=info.get('model'),generation=info.get('generation'),
+            reference_source=info.get('reference_source'),provenance=state.get('selected_reference'),
+            original_reference_window=dict(start=state.get('start'),end=state.get('end')))
+        (temporary/'voice-backup.json').write_text(json.dumps(metadata,indent=2,ensure_ascii=False),encoding='utf8')
+        (temporary/'README.txt').write_text('Reuse this voice in Murphy Waze:\nStart a new voice, choose Use my voice reference, and select '+metadata['reference']+'.\nPaste any new 39-slot script, make two tests and approve before full generation.\nPrepared pack references use the whole file. If this was a raw master fallback, use original_reference_window from voice-backup.json.\npack/audio contains generated WAVs; pack/Waze MP3 contains any built Waze pack.\nShare this entire folder. Audio and hash lists use relative paths. Source provenance is historical and may mention original PC paths.\nVoiceStudio profile IDs may be machine-specific. This is a reusable audio reference, not independent model weights; compatible voice-generation software/models are still required.\nNo account credentials or model caches are included.\n',encoding='utf8')
+        temporary.rename(destination)
+    except Exception:
+        # Preserve failed copies for diagnosis; never modify an existing snapshot.
+        raise
+    return destination
 
-def recover(source, target):
-    target.mkdir(parents=True, exist_ok=False)
-    index = []
-    for archive in sorted(source.rglob("*.zip")):
-        with zipfile.ZipFile(archive) as z:
-            for entry in z.infolist():
-                if not entry.filename.lower().endswith(".mp3"):
-                    continue
-                # Preserve prompt paths, and prevent archive path traversal.
-                dest = (target / archive.stem / entry.filename).resolve()
-                if not dest.is_relative_to(target.resolve()):
-                    raise ValueError("Unsafe archive path")
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(z.read(entry))
-                index.append({"source": str(archive), "output": str(dest),
-                              "kind": "zip-prompt"})
-    for audio in sorted(source.rglob("*.exo")):
-        header = audio.read_bytes()[:3]
-        if header != b"ID3" and not (len(header) >= 2 and header[0] == 255 and header[1] & 224 == 224):
-            continue
-        dest = target / "unmapped-cache" / audio.parent.name / (audio.name + ".mp3")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(audio, dest)
-        index.append({"source": str(audio), "output": str(dest),
-                      "kind": "cache-span-unmapped", "warning": "May be partial audio; identity unknown"})
-    (target / "recovery-index.json").write_text(json.dumps(index, indent=2))
-    (target / "sha256-manifest.json").write_text(json.dumps(manifest(target), indent=2))
-    print(json.dumps({"audio_files": len(index), "output": str(target.resolve())}))
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest="command", required=True)
-    backup = sub.add_parser("backup")
-    backup.add_argument("destination", type=Path)
-    backup.add_argument("--serial", required=True, help="Device serial from adb devices")
-    extract = sub.add_parser("recover")
-    extract.add_argument("source", type=Path)
-    extract.add_argument("destination", type=Path)
-    download = sub.add_parser("download", help="Back up one shared voice; fails explicitly on denied access")
-    download.add_argument("share_link")
-    download.add_argument("destination", type=Path)
-    args = parser.parse_args()
-    if args.command == "backup":
-        args.destination.mkdir(parents=True, exist_ok=False)
-        subprocess.run(["adb", "-s", args.serial, "pull",
-                        "/sdcard/Android/data/com.waze", str(args.destination)], check=True)
-        (args.destination / "sha256-manifest.json").write_text(
-            json.dumps(manifest(args.destination), indent=2))
-    elif args.command == "recover":
-        recover(args.source, args.destination)
-    else:
-        values = urllib.parse.parse_qs(urllib.parse.urlparse(args.share_link).query)
-        raw_id = values.get("acvp", [args.share_link])[0]
-        uuid.UUID(raw_id)  # Validate without changing case: Waze object keys are case-sensitive.
-        voice_id = raw_id
-        if args.destination.exists():
-            raise ValueError("Destination already exists; refusing to overwrite")
-        failures = []
-        for host in ["voice-prompts.waze.com", "voice-prompts-ipv6.waze.com"]:
-            url = f"https://{host}/{voice_id}.tar.gz"
-            try:
-                with urllib.request.urlopen(url, timeout=25) as response:
-                    data = response.read(20_000_001)
-                if len(data) > 20_000_000:
-                    raise ValueError("Archive exceeds 20 MB recovery limit")
-                with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
-                    members = archive.getmembers()
-                    if sum(m.size for m in members) > 100_000_000:
-                        raise ValueError("Extracted archive exceeds recovery limit")
-                    if not any(m.name.lower().endswith('.mp3') for m in members):
-                        raise ValueError("Response contains no MP3 prompts")
-                    for m in members:
-                        path = Path(m.name)
-                        if m.issym() or m.islnk() or not (m.isfile() or m.isdir()) or path.is_absolute() or '..' in path.parts or '\\' in m.name or ':' in m.name:
-                            raise ValueError("Unsafe archive entry")
-                    args.destination.mkdir(parents=True)
-                    (args.destination / "original.tar.gz").write_bytes(data)
-                    for m in members:
-                        if not m.isfile():
-                            continue
-                        dest = args.destination / "audio" / m.name
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        dest.write_bytes(archive.extractfile(m).read())
-                (args.destination / "sha256-manifest.json").write_text(json.dumps(manifest(args.destination), indent=2))
-                print(f"Backed up {voice_id} from {host} to {args.destination.resolve()}")
-                return
-            except (urllib.error.URLError, tarfile.TarError, ValueError) as exc:
-                failures.append(f"{host}: {exc}")
-        raise SystemExit("Download not recovered. " + '; '.join(failures))
-
-
-if __name__ == "__main__":
-    main()
+def automatic_backup(state,file):
+    try:
+        result=backup(state,file)
+        if result:print('Verified voice backup: '+str(result),flush=True)
+        return result
+    except Exception as exc:
+        print('Voice backup needs attention: '+str(exc),flush=True)
+        (file.parent/'voice-backup-error.txt').write_text(str(exc),encoding='utf8')
+        return None

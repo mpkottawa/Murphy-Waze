@@ -12,7 +12,7 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from datetime import datetime
 from pack_builder import PROMPTS, discover, build, find_studio, load_studio
 from online_voices import refresh as refresh_catalog
-from phone_links import save_to_phone
+from phone_links import save_to_phone, save_local_links
 from local_packs import scan as scan_local, load_verified
 from app_version import VERSION,APP_TITLE
 from inline_panel import InlinePanel
@@ -23,8 +23,15 @@ DATABASE=ROOT.parent
 
 class App(tk.Tk):
     def __init__(self):
+        if sys.platform=='win32':
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('mpkottawa.WazeVoiceStudio')
         super().__init__()
+        from popup_placement import install
+        install(self)
         self.title(APP_TITLE)
+        icon=ROOT.parents[1]/'assets'/'murphy-waze-white-mkz.ico'
+        if icon.is_file():self.iconbitmap(default=str(icon))
         self.geometry('1120x790')
         self.minsize(1000,740)
         from app_theme import AppTheme
@@ -32,6 +39,7 @@ class App(tk.Tk):
         self.geometry('1280x900')
         self.state('zoomed')  # Start maximized; keep standard restore/minimize controls.
         header=ttk.Frame(self,style='Header.TFrame',padding=(22,6));header.pack(fill='x')
+        ttk.Button(header,text='Settings / updates',command=lambda:__import__('app_settings').show(self)).pack(side='right',padx=8)
         self.voice_heading=tk.StringVar(value='Create your voice pack')
         ttk.Label(header,textvariable=self.voice_heading,style='Header.TLabel',anchor='center').pack(fill='x',expand=True,side='left')
         ttk.Checkbutton(header,text='Dark mode',style='Header.TCheckbutton',variable=self.appearance.dark,command=self.appearance.toggle).pack(side='right',padx=8)
@@ -483,12 +491,13 @@ class App(tk.Tk):
             data=json.loads(result.read_text(encoding='utf-8-sig'))
             if data.get('verified_download'):
                 self.link.set(data['share_link'])
+                save_local_links(DATABASE,name,data['share_link'],'Existing verified upload; display name unchanged.')
                 if auto_phone:
                     def reuse():self.events.put(('log',save_to_phone(DATABASE,name,data['share_link'],'Existing verified upload; display name unchanged.')))
                     self.work(reuse)
                 return
             messagebox.showerror('Previous upload unverified','See upload-result.json before trying again; a remote copy may exist.');return
-        def job():
+        def upload_job():
             from phone_links import connection_status
             ready,detail=connection_status()
             if not ready:raise RuntimeError(detail+'; nothing uploaded.')
@@ -501,10 +510,14 @@ class App(tk.Tk):
             if preparation.get('compressed'):
                 self.events.put(('log',f"Compressed all {data['prompt_count']} prompts from {preparation['original_bytes']:,} to {preparation['upload_bytes']:,} bytes at {preparation['bitrate_kbps']} kbps; full clip lengths retained."))
             (result.parent/'INSTALL-LINK.txt').write_text(data['share_link']+'\n',encoding='utf8')
+            save_local_links(DATABASE,name,data['share_link'],'Upload download-verified; navigation playback still needs testing.')
             self.events.put(('uploaded',data['share_link']))
             if auto_phone:
                 try:self.events.put(('log',save_to_phone(DATABASE,name,data['share_link'],'Upload download-verified; navigation playback still needs testing.')))
                 except Exception as exc:self.events.put(('log','Upload succeeded, but phone link files were not updated: '+str(exc)+'. Use Save link to phone to retry.'))
+        def job():
+            from process_times import measure,workflow_for
+            with measure(workflow_for(archive),'upload'):upload_job()
         self.work(job)
 
     def refresh_pack_status(self):

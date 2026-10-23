@@ -11,7 +11,7 @@ sys.path.insert(0, str(TOOLS))
 from pack_builder import PROMPTS
 from app_version import APP_NAME, VERSION
 
-assert APP_NAME == 'Waze Voice Studio'
+assert APP_NAME == 'Murphy Waze'
 assert re.fullmatch(r'\d+\.\d+\.\d{2}', VERSION)
 slots = json.loads((TOOLS / 'engine_support/waze_voice_studio/phone_inventory.json').read_text())
 assert set(slots) == {'slots'}, 'Do not distribute a device serial or phone inventory metadata'

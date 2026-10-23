@@ -27,6 +27,14 @@ def speech_words(text):
     return [word.replace("'",'') for word in normalize(text)]
 
 
+def comparison_words(expected, heard):
+    a, b = speech_words(expected), speech_words(heard)
+    if 'du' in a:
+        a = ['doo' if w == 'du' else w for w in a]
+        b = ['doo' if w in ('du', 'doo', 'do') else w for w in b]
+    return a, b
+
+
 def say(message):
     print(message, flush=True)
 
@@ -133,8 +141,8 @@ def prepare(state, file):
         raise ValueError('Master changed. Run reference selection again.')
     start, end = float(state['start']), float(state['end'])
     audio, rate = sf.read(state['analysis'], dtype='float32')
-    if not (0 <= start < end <= len(audio)/rate and 10 <= end-start <= 20.001):
-        raise ValueError('Choose a valid 10–20-second reference window within the master.')
+    if not (0 <= start < end <= len(audio)/rate and 6 <= end-start <= 20.001):
+        raise ValueError('Choose a valid 6–20-second reference window within the master.')
     signature = {'name': state['name'].strip(), 'master': state['master_sha256'],
                  'start': start, 'end': end, 'lines': [s['spoken_text'] for s in slots]}
     if state.get('signature') == signature and state.get('pack'):
@@ -251,8 +259,10 @@ def generate(state, file, full=False, force=False, repair_ids=None):
         pack = load_pack(folder)
         clip = folder / slot['audio_file']
         old = checks.get(slot['id'], {})
-        if current_audio(folder,pack,slot) and old.get('sha256')==digest(clip) and old.get('expected')==slot['spoken_text'] and 'recognized' in old:
-            a,b=speech_words(old['expected']),speech_words(old['recognized'])
+        from clip_review import valid_listener_approval
+        listener_ok=valid_listener_approval(old,digest(clip) if clip.is_file() else '',slot['spoken_text'])
+        if not listener_ok and current_audio(folder,pack,slot) and old.get('sha256')==digest(clip) and old.get('expected')==slot['spoken_text'] and 'recognized' in old:
+            a,b=comparison_words(old['expected'],old['recognized'])
             agreement=difflib.SequenceMatcher(None,a,b,autojunk=False).ratio()
             missing=[w for w in CRITICAL if w in a and w not in b]
             old.update(word_agreement=agreement,missing_keywords=missing,review=agreement<.8 or bool(missing))
@@ -268,7 +278,7 @@ def generate(state, file, full=False, force=False, repair_ids=None):
             if client.request('GET', '/engines/tts').json()['active'] != 'omnivoice':
                 raise ValueError('Engine changed during generation. Stopped without fallback.')
             raw = folder / (slot['id'] + '-pending.wav')
-            spoken = slot['spoken_text']
+            spoken = re.sub(r'\bdu\b', 'doo', slot['spoken_text'], flags=re.IGNORECASE)
             if attempt > 1 and 'too long' in checks.get(slot['id'],{}).get('error','').lower():
                 # Reduce punctuation pauses on a timing retry, keeping every word.
                 spoken = re.sub(r'(?<!\d)[.!?;,]+(?!\d)', ' ', spoken)
@@ -289,7 +299,7 @@ def generate(state, file, full=False, force=False, repair_ids=None):
             segments, _ = asr.transcribe(str(clip), language='en', beam_size=3,
                                         condition_on_previous_text=False)
             heard = ' '.join(s.text.strip() for s in segments)
-            a, b = speech_words(slot['spoken_text']), speech_words(heard)
+            a, b = comparison_words(slot['spoken_text'], heard)
             agreement = difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
             missing = [w for w in CRITICAL if w in a and w not in b]
             checks[slot['id']] = {'expected': slot['spoken_text'], 'recognized': heard,
@@ -318,6 +328,9 @@ def generate(state, file, full=False, force=False, repair_ids=None):
         write_json(file, state)
         say('Two checked clips ready. Listen to both before approving all 39.')
         return
+    from clip_review import hold_for_listener_review
+    if hold_for_listener_review(state,file):
+        say(state['last_error']);return
     issues = validation(folder)
     if issues:
         raise ValueError('\n'.join(issues))
@@ -325,6 +338,8 @@ def generate(state, file, full=False, force=False, repair_ids=None):
         raise ValueError('Master changed during the workflow; review before publishing.')
     destination = (file.parent / ('Pack-' + uuid.uuid4().hex[:8])) if state.get('character_folder') else Path(state['library']) / (folder.name + '-' + uuid.uuid4().hex[:8])
     folder.rename(destination)
+    from voice_library import relocate_reference_paths
+    relocate_reference_paths(state,folder,destination)
     if state.get('approval_tests_pack') == str(folder):
         state['approval_tests_pack'] = str(destination)
     state.update(pack=str(destination), phase='complete')
@@ -451,6 +466,32 @@ def main():
     except OSError:
         raise SystemExit('This workflow is already running in another window.')
     state = json.loads(args.state.read_text(encoding='utf8'))
+    import process_times
+    process_times.start(args.state,'other')
+    reused_reference=False
+    if args.operation in ('youtube','auto_scene','name','timestamp_preview','scan','episodes'):
+        from voice_library import reuse_approved_reference
+        reused_reference=reuse_approved_reference(state,args.state)
+    from workflow_modes import provider
+    if args.operation in ('youtube','auto_scene') and not reused_reference and provider(state)=='local' and not state.get('seed_matching'):
+        from local_review import preflight
+        try:preflight(args.state)
+        except (OSError,ValueError) as exc:
+            state.update(phase='reference_setup_needed',last_error=str(exc))
+            write_json(args.state,state)
+            raise
+    if args.operation in ('youtube','auto_scene','timestamp_preview','name','scan','episodes'):
+        from cloud_workflow import ensure_script
+        ensure_script(state,args.state)
+    if reused_reference:
+        say('Using verified approved saved reference; skipping reference search.')
+        process_times.start(args.state,'tests')
+        from name_voice import ensure_engine
+        ensure_engine(args.state,say)
+        generate(state,args.state)
+        return
+    timing_stage='search' if args.operation in ('youtube','auto_scene','scan','episodes','name','timestamp_preview') else 'generation' if args.operation in ('generate','rerun','build') else 'repair' if args.operation=='repair' else 'tests'
+    process_times.start(args.state,timing_stage)
     if args.operation == 'validate':
         slots = parse_script(state['script'])
         say('All 39 prompt labels are mapped, with no missing or duplicate entries.')
@@ -513,7 +554,11 @@ def main():
         if args.operation in ('generate', 'repair','rerun') and state.get('phase') == 'complete':
             from name_voice import finish_pack
             finish_pack(state, args.state)
+            from voice_backup import automatic_backup
+            automatic_backup(state,args.state)
 
 
 if __name__ == '__main__':
-    main()
+    import process_times
+    try:main()
+    finally:process_times.finish()

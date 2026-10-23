@@ -41,6 +41,37 @@ def render(entries):
     return text,page
 
 
+def render_share(entries):
+    return ('WAZE CUSTOM VOICES\nOpen a link on your phone to add the voice in Waze.\n\n'+
+            '\n\n'.join(e['name']+'\n'+valid_link(e['link']) for e in entries)+'\n')
+
+
+def write_link_files(database,entries):
+    folder=Path(database)/'Phone links';folder.mkdir(parents=True,exist_ok=True)
+    (folder/'links.json').write_text(json.dumps(entries,indent=2),encoding='utf8')
+    text,page=render(entries);share=render_share(entries)
+    files=[]
+    for filename,content in [('Waze-Voice-Links.txt',text),('Waze-Voice-Links.html',page),('Waze-Voice-Links-share.txt',share)]:
+        path=folder/filename;path.write_text(content,encoding='utf8');files.append(path)
+    (Path(database).parent/'Waze-Voice-Links-share.txt').write_text(share,encoding='utf8')
+    return files
+
+
+def save_local_links(database,name,link,note):
+    valid_link(link)
+    folder=Path(database)/'Phone links';registry=folder/'links.json'
+    entries=json.loads(registry.read_text(encoding='utf8')) if registry.is_file() else []
+    for local in [folder/'Waze-Voice-Links.txt',Path(database).parent/'Waze-Voice-Links-share.txt']:
+        if local.is_file():
+            known={e['link'] for e in entries}
+            entries.extend(e for e in parse_text(local.read_text(encoding='utf8')) if e['link'] not in known)
+    entries=[e for e in entries if e['link']!=link]
+    entries.insert(0,dict(name=name,link=link,note=note))
+    entries=list({e['link']:e for e in reversed(entries)}.values())[::-1]
+    write_link_files(database,entries)
+    return entries
+
+
 def adb(*args,check=True):
     result=subprocess.run(['adb',*args],capture_output=True,text=True,timeout=30,
                           creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -69,7 +100,7 @@ def save_to_phone(database,name,link,note):
     valid_link(link)
     folder=Path(database)/'Phone links';folder.mkdir(parents=True,exist_ok=True)
     registry=folder/'links.json'
-    entries=json.loads(registry.read_text(encoding='utf8')) if registry.is_file() else []
+    entries=save_local_links(database,name,link,note)
     local=folder/'Waze-Voice-Links.txt'
     if local.is_file():
         known={e['link'] for e in entries}
@@ -92,12 +123,10 @@ def save_to_phone(database,name,link,note):
     entries.insert(0,{'name':name,'link':link,'note':note})
     # Deduplicate while preserving the newest item at the top.
     entries=list({e['link']:e for e in reversed(entries)}.values())[::-1]
-    registry.write_text(json.dumps(entries,indent=2),encoding='utf8')
-    text,page=render(entries)
-    for filename,content in [('Waze-Voice-Links.txt',text),('Waze-Voice-Links.html',page)]:
-        path=folder/filename;path.write_text(content,encoding='utf8')
+    for path in write_link_files(database,entries):
+        filename=path.name
         remote='/sdcard/'+filename
         adb('-s',serial,'push',str(path),remote)
         actual=adb('-s',serial,'shell','sha256sum',remote).stdout.split()[0]
         if actual!=hashlib.sha256(path.read_bytes()).hexdigest():raise RuntimeError('Phone file hash verification failed')
-    return f'Updated Internal storage/Waze-Voice-Links.txt and .html ({len(entries)} saved links).'
+    return f'Updated Internal storage/Waze-Voice-Links.txt, .html and Waze-Voice-Links-share.txt ({len(entries)} saved links).'

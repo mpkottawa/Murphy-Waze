@@ -1,11 +1,15 @@
-Waze Voice Studio 1.0.01 - Windows x64
+Murphy Waze 2.0.00 - Windows x64
 
-This single setup program installs the app and automatically downloads and installs its dependencies. An internet connection is required; it is not an offline bundle.
+Run one installer to install the application and check its dependencies. Missing components and models are downloaded over the internet. This is not an offline bundle.
 
-Allow at least 30 GB free disk space for the separate Python runtimes, VoiceStudio, caches and AI models, plus space for your recordings. Setup can take a long time on slow connections.
+Allow at least 30 GB free for Python runtimes, VoiceStudio, caches and AI models, plus your recordings. Compatible installed components and verified downloads are reused.
 
-Setup automatically prepares VoiceStudio and all models required by Waze Voice Studio, verifies model initialization, and skips components that already pass compatibility and health checks. Automatic AI review uses your own Codex login; existing logins are reused. Audio generation runs locally in VoiceStudio.
+After installation, open Settings / updates. Sign in to ChatGPT through the official Codex browser/console flow and optionally choose a model or a previously configured provider profile. Manual script import is also supported. Murphy Waze does not store account passwords or copy sign-in credentials.
 
-Python and media tools are kept private to this application. Microsoft's C++ runtime may request administrator approval. VoiceStudio is a separate application; uninstalling Waze Voice Studio will not remove it or your saved voices.
+GPU/CPU speech scanning is installed separately from voice generation. Full speaker separation requires signing into Hugging Face and accepting Community-1's conditions; setup reports this as pending when access is not available. Audio generation stays local. Voice approval and uploading remain explicit user steps.
 
-This is an independent community project, not affiliated with Waze or Google.
+Future .mwupdate files can be imported inside Settings / updates. Voice libraries, backups, credentials and private runtimes are excluded from update payloads. Replaced application files have rollback copies.
+
+Python and media tools are private to the application. Microsoft's C++ runtime may request elevation. VoiceStudio is a separate application. Existing voices are kept when installing over the same directory.
+
+This unsigned installer is an independent community project, not affiliated with Waze, Google, OpenAI or VoiceStudio.

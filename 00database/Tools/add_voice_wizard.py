@@ -1,3 +1,4 @@
+import script_options
 """Guided local Add Voice UI; heavy audio work runs in a separate Python runtime."""
 import json
 import hashlib
@@ -50,7 +51,10 @@ class AddVoiceWizard(ttk.Frame):
         self.scene_cloud_review=tk.BooleanVar(value=True)
         self.youtube_query=tk.StringVar()
         self.youtube_url=tk.StringVar()
-        self.youtube_kind=tk.StringVar(value='Character scenes')
+        self.youtube_kind=tk.StringVar(value='Auto - best source')
+        from workflow_modes import LABELS,LOCAL,DEFAULT,default_mode
+        self.workflow_mode=tk.StringVar(value=LABELS[default_mode()])
+        self.mode_help=tk.StringVar()
         self.episodes = []
         self.library = tk.StringVar(value=str(Path(__file__).resolve().parents[2]))
         self.start = tk.StringVar(value='0')
@@ -65,13 +69,16 @@ class AddVoiceWizard(ttk.Frame):
         self.resume_button.pack(side='right')
         ttk.Button(header_actions, text='Open VoiceStudio', command=self.open_voicestudio).pack(side='right',padx=6)
         ttk.Button(header_actions,text='Start a new voice',command=self.app.fresh_voice).pack(side='right',padx=6)
+        self.voice_time_tally=tk.StringVar(value='Process time: totals will appear when a voice is loaded')
+        ttk.Label(self,textvariable=self.voice_time_tally,wraplength=1180).pack(fill='x',padx=12,pady=(0,2))
+        self._last_tally_refresh=0
         self.workspace=ttk.Frame(self)
         self.workspace.pack(fill='both',expand=True,padx=12)
         self.tabs = ttk.Notebook(self.workspace,height=300)
         self.workspace.columnconfigure(0,weight=1)
         self.workspace.rowconfigure(0,weight=1)
         self.tabs.grid(row=0,column=0,sticky='nsew')
-        self.start_tab = ttk.Frame(self.tabs,padding=16)
+        self.start_tab = ttk.Frame(self.tabs,padding=6)
         self.reference_tab = ttk.Frame(self.tabs, padding=12)
         self.script_tab = ttk.Frame(self.tabs, padding=12)
         self.generate_tab = ttk.Frame(self.tabs, padding=12)
@@ -118,23 +125,29 @@ class AddVoiceWizard(ttk.Frame):
         self.script.pack(fill='both', expand=True)
         ttk.Button(self.script_tab, text='Next: test voice →', command=lambda: self.tabs.select(self.generate_tab)).pack(anchor='e', pady=8)
         self.generate_canvas=tk.Canvas(self.generate_tab,highlightthickness=0,height=300)
-        self.generate_canvas.pack(fill='both',expand=True)
+        self.generate_scroll=ttk.Scrollbar(self.generate_tab,orient='vertical',command=self.generate_canvas.yview)
+        # Page controls always fit; only data editors and lists scroll.
+        self.generate_canvas.configure(yscrollcommand=self.generate_scroll.set)
+        self.generate_canvas.pack(side='left',fill='both',expand=True)
         self.generate_content=ttk.Frame(self.generate_canvas)
         self.generate_window=self.generate_canvas.create_window((0,0),window=self.generate_content,anchor='nw')
-        self.generate_content.bind('<Configure>',lambda event:self.generate_canvas.configure(scrollregion=self.generate_canvas.bbox('all')))
+        self.generate_content.bind('<Configure>',self.generation_content_changed)
         self.generate_canvas.bind('<Configure>',self.size_generation)
         self.test_summary=ttk.Frame(self)
-        ttk.Label(self.test_summary, text='Listen to two tests → approve → generate all 39 → upload',anchor='center',justify='center').pack(fill='x')
         self.sample_info=tk.StringVar(value='')
-        sample_label=ttk.Label(self.test_summary,textvariable=self.sample_info,wraplength=680,anchor='center',justify='center')
-        sample_label.pack(fill='x',pady=4)
+        logo=Path(__file__).resolve().parents[2]/'assets/waze-voice-studio-murph-cat.png'
+        if logo.is_file():
+            original=tk.PhotoImage(master=self,file=str(logo))
+            factor=max(1,(max(original.width(),original.height())+191)//192)
+            self.header_murph=original.subsample(factor,factor)
+            ttk.Label(self.test_summary,image=self.header_murph,padding=(16,8)).pack()
         self.tabs.bind('<<NotebookTabChanged>>',lambda event:self.position_test_summary(),add='+')
         self.bind('<Configure>',lambda event:self.position_test_summary() if event.widget==self else None,add='+')
         self.live_indicator=tk.StringVar(value='○ Ready')
         self._audio_stage='Preparing audio'
         self._last_audio_update=None
         ttk.Label(self.generate_content,textvariable=self.live_indicator,foreground='#41c98a').pack(anchor='w',pady=(4,2))
-        self.reference_progress=tk.StringVar(value='Reference target: 10–20 seconds from one passage or checked matching passages. Quality checks come before test generation.')
+        self.reference_progress=tk.StringVar(value='Reference target: 6–10 seconds combined, or 10–20 seconds continuous. Quality checks come before test generation.')
         ttk.Label(self.generate_content,textvariable=self.reference_progress,wraplength=1050).pack(fill='x',pady=(4,6))
         self.test_audio_progress=tk.StringVar(value='Test audio: waiting for two clips.')
         self.sample_durations={}
@@ -149,32 +162,36 @@ class AddVoiceWizard(ttk.Frame):
         finish=ttk.LabelFrame(self.generation_cards,text='2  •  Approve and finish',padding=8)
         finish.grid(row=0,column=1,sticky='nsew',padx=(8,0))
         controls = ttk.Frame(tests); controls.pack(fill='x', pady=4)
+        controls.columnconfigure(0,weight=1,uniform='tests');controls.columnconfigure(1,weight=1,uniform='tests')
         self.test_button = ttk.Button(controls, text='Generate / retry first 2', command=lambda: self.run('preview'))
-        self.test_button.pack(fill='x',pady=(0,10))
+        self.test_button.grid(row=0,column=0,sticky='nsew',padx=(0,4),pady=(0,6))
         self.test_button.configure(style='Primary.TButton')
-        self.regenerate_tests_button=ttk.Button(controls,text='Regenerate both tests',command=lambda:self.run('retake'))
-        self.regenerate_tests_button.pack(fill='x',pady=(0,10))
+        self.regenerate_tests_button=ttk.Button(controls,text='Keep reference\nRegenerate tests',command=lambda:self.run('retake'))
+        self.regenerate_tests_button.grid(row=0,column=1,sticky='nsew',padx=(4,0),pady=(0,6))
         playback=ttk.Frame(tests);playback.pack(fill='x')
         self.listen1 = ttk.Button(playback, text='Play test 1', command=lambda: self.play_test(0), state='disabled'); self.listen1.pack(side='left',fill='x',expand=True,padx=(0,4))
         self.listen2 = ttk.Button(playback, text='Play test 2', command=lambda: self.play_test(1), state='disabled'); self.listen2.pack(side='left',fill='x',expand=True,padx=4)
-        ttk.Button(playback, text='Stop', command=self.stop).pack(side='left',padx=(4,0))
+        self.stop_button=ttk.Button(playback, text='Stop preview', command=self.stop_action)
+        self.stop_button.pack(side='left',padx=(4,0))
         approval_row=ttk.Frame(finish);approval_row.pack(fill='x',pady=4)
         split=ttk.Frame(approval_row);split.pack(fill='x',pady=(0,8))
-        split.columnconfigure(0,weight=1,uniform='approval');split.columnconfigure(1,weight=2,uniform='approval')
+        split.columnconfigure(0,weight=1,uniform='approval');split.columnconfigure(1,weight=1,uniform='approval')
         self.save_tests_button=ttk.Button(split,text='Save approved voice',command=self.approve,state='disabled',style='Primary.TButton')
         self.save_tests_button.grid(row=0,column=0,sticky='ew',padx=(0,6))
         self.approve_button = ttk.Button(split, text='Generate / resume all 39', command=self.generate_approved, state='disabled')
         self.approve_button.grid(row=0,column=1,sticky='ew')
         self.approve_button.configure(style='Primary.TButton')
         self.approve_button.bind('<Button-3>',self.rerun_menu)
-        self.repair_button = ttk.Button(approval_row, text='Repair failed clips (keep script)', command=lambda: self.run('repair'), state='disabled')
-        self.repair_button.pack(fill='x')
-        self.approved_script_button=ttk.Button(finish,text='Import AI reply from clipboard',command=self.import_ai_reply,style='Primary.TButton')
-        ttk.Label(finish,text='Right-click the approved button to rerun all 39. Existing pack is kept.',wraplength=650).pack(anchor='center',pady=4)
+        action_row=ttk.Frame(approval_row);action_row.pack(fill='x')
+        action_row.columnconfigure(0,weight=1,uniform='finish');action_row.columnconfigure(1,weight=1,uniform='finish')
+        self.repair_button = ttk.Button(action_row, text='Repair failed clips\nKeep script', command=self.review_failed_clips, state='disabled')
+        self.repair_button.grid(row=0,column=0,sticky='nsew',padx=(0,6))
+        self.script_actions=ttk.Frame(action_row);self.script_actions.grid(row=0,column=1,sticky='nsew')
+        self.approved_script_button=ttk.Button(self.script_actions,text='Import AI reply from clipboard',command=self.import_ai_reply,style='Primary.TButton')
         self.repair_details=tk.StringVar()
-        repair_label=ttk.Label(finish,textvariable=self.repair_details,wraplength=700)
-        repair_label.pack(anchor='w')
-        delivery_row=ttk.Frame(self.generate_content);delivery_row.pack(fill='x',pady=4)
+        self.repair_label=ttk.Label(self.generate_content,textvariable=self.repair_details,wraplength=1050)
+        self.repair_details.trace_add('write',lambda *args:self.show_repair_details())
+        delivery_row=ttk.Frame(self.generate_tab);delivery_row.pack(side='bottom',fill='x',pady=4,before=self.generate_canvas)
         self.load_button = ttk.Button(delivery_row, text='Final step: Upload to Waze…', command=self.upload_finished, state='disabled')
         self.load_button.pack(side='left')
         ttk.Label(delivery_row,textvariable=self.app.phone_status,wraplength=240).pack(side='left',padx=8)
@@ -216,7 +233,24 @@ class AddVoiceWizard(ttk.Frame):
         self.after_idle(self.balance_workspace)
 
     def balance_workspace(self):
-        pass  # Fixed console height; the form receives all remaining space.
+        if not hasattr(self,'log'):return
+        from tkinter import font
+        line=font.Font(font=self.log.cget('font')).metrics('linespace')
+        current=int(self.log.cget('height'))
+        # Reclaim log lines before making action controls scroll. Keep two log
+        # lines available, and restore the larger log when there is enough room.
+        extra=(self.generate_canvas.winfo_height()-self.generate_content.winfo_reqheight()) if self.tabs.select()==str(self.generate_tab) else (self.start_canvas.winfo_height()-self.start_body.winfo_reqheight())
+        rows=max(2,min(4,current+int(extra//max(1,line))))
+        if rows!=current:self.log.configure(height=rows)
+
+    def generation_content_changed(self,event):
+        self.generate_canvas.configure(scrollregion=self.generate_canvas.bbox('all'))
+        self.after_idle(self.balance_workspace)
+
+    def show_repair_details(self):
+        if self.repair_details.get().strip():self.repair_label.pack(fill='x',pady=(2,0))
+        else:self.repair_label.pack_forget()
+        self.after_idle(self.balance_workspace)
 
     def rerun_menu(self,event):
         if self.busy or not self.state_data.get('approved'):return 'break'
@@ -252,13 +286,18 @@ class AddVoiceWizard(ttk.Frame):
             button.configure(text=f'{title}\nElapsed {elapsed} · ETA {eta}')
 
     def size_generation(self,event):
-        self.generate_canvas.itemconfigure(self.generate_window,width=event.width,height=max(event.height,self.generate_content.winfo_reqheight()))
+        # Let Tk recalculate the natural height when approval reveals more controls.
+        # Pinning the canvas window height compresses the final action buttons.
+        self.generate_canvas.itemconfigure(self.generate_window,width=event.width)
+        for label in self.generate_content.winfo_children():
+            if isinstance(label,ttk.Label):label.configure(wraplength=max(300,event.width-20))
+        self.after_idle(self.balance_workspace)
 
     def position_test_summary(self):
         # Use the otherwise empty middle of the header and step-navigation rows.
         # No extra layout row: the test controls start directly below the tabs.
         if self.tabs.select()==str(self.generate_tab):
-            self.test_summary.place(relx=.5,y=0,anchor='n',width=690)
+            self.test_summary.place(relx=.5,y=0,anchor='n',width=224)
             self.test_summary.lift()
         else:
             self.test_summary.place_forget()
@@ -296,7 +335,7 @@ class AddVoiceWizard(ttk.Frame):
         canvas=tk.Canvas(viewport,highlightthickness=0,height=10)
         self.start_canvas=canvas
         scroll=ttk.Scrollbar(viewport,orient='vertical',command=canvas.yview)
-        scroll.pack(side='right',fill='y');canvas.configure(yscrollcommand=scroll.set)
+        canvas.configure(yscrollcommand=scroll.set)
         canvas.pack(side='left',fill='both',expand=True)
         body=ttk.Frame(canvas);self.start_body=body;item=canvas.create_window((0,0),window=body,anchor='nw')
         body.bind('<Configure>',lambda event:(canvas.configure(scrollregion=canvas.bbox('all')),self.after_idle(self.balance_workspace)))
@@ -305,51 +344,59 @@ class AddVoiceWizard(ttk.Frame):
         body.columnconfigure(0,weight=1,uniform='start');body.columnconfigure(1,weight=1,uniform='start')
         f=ttk.Frame(body,padding=(8,0,16,0));f.grid(row=0,column=0,sticky='new')
         source_host=ttk.Frame(body,padding=(16,0,8,0));source_host.grid(row=0,column=1,sticky='new')
-        ttk.Label(source_host,text='Reference & search',font=('',13,'bold')).pack(anchor='w',pady=(0,10))
-        ttk.Label(f,text='Create your voice',font=('',13,'bold')).pack(anchor='w',pady=(0,10))
-        row=ttk.Frame(f); row.pack(fill='x',pady=4)
+        ttk.Label(source_host,text='Reference & search',font=('',13,'bold')).pack(anchor='w')
+        ttk.Label(f,text='Create your voice',font=('',13,'bold')).pack(anchor='w',pady=(0,4))
+        from workflow_modes import LABELS
+        mode_row=ttk.Frame(f);mode_row.pack(fill='x',pady=2)
+        ttk.Label(mode_row,text='Run mode').pack(side='left')
+        self.mode_picker=ttk.Combobox(mode_row,textvariable=self.workflow_mode,values=list(LABELS.values()),state='readonly',width=31)
+        self.mode_picker.pack(side='left',fill='x',expand=True,padx=8)
+        ttk.Button(mode_row,text='Connect ChatGPT…',command=self.connect_chatgpt).pack(side='right')
+        ttk.Label(source_host,textvariable=self.mode_help,wraplength=480).pack(fill='x',pady=(0,4))
+        self.workflow_mode.trace_add('write',lambda *args:self.update_workflow_mode())
+        row=ttk.Frame(f); row.pack(fill='x',pady=2)
         ttk.Label(row,text='Voice / character name').pack(side='left')
         ttk.Entry(row,textvariable=self.name).pack(side='left',fill='x',expand=True,padx=10)
-        row=ttk.Frame(f);row.pack(fill='x',pady=4)
+        row=ttk.Frame(f);row.pack(fill='x',pady=2)
         ttk.Label(row,text='Description / delivery (optional)').pack(side='left')
         ttk.Entry(row,textvariable=self.description).pack(side='left',fill='x',expand=True,padx=10)
         ideas=ttk.LabelFrame(f,text='Quotes, words & script ideas (optional)',padding=8)
-        ideas.pack(fill='x',pady=6)
-        self.script_ideas=tk.Text(ideas,height=4,wrap='word',undo=True)
+        ideas.pack(fill='x',pady=3)
+        self.script_ideas=tk.Text(ideas,height=1,wrap='word',undo=True)
         self.script_ideas.pack(fill='x',expand=True)
-        ttk.Label(ideas,text='Add favorite quotes, catchphrases, names or topics — one per line. These guide the script.',wraplength=420).pack(anchor='w',pady=(4,0))
-        row=ttk.Frame(f); row.pack(fill='x',pady=4)
+        script_options.controls(f,self).pack(fill='x',pady=3)
+        row=ttk.Frame(source_host); row.pack(fill='x',pady=2)
         ttk.Label(row,text='Working folder').pack(side='left')
         ttk.Entry(row,textvariable=self.library,state='readonly').pack(side='left',fill='x',expand=True,padx=10)
         ttk.Button(row,text='Open folder',command=lambda:os.startfile(self.library.get())).pack(side='right')
         self.source_choices={'youtube':'Find public YouTube speech (recommended)','reference':'Use my voice reference','auto_scene':'Find speech in my show folder','timestamp':'Episode with a known timestamp','episodes':'Match a character sample across episodes','name':'Legacy name search'}
         self.source_choice=tk.StringVar()
-        row=ttk.Frame(f);row.pack(fill='x',pady=4)
+        row=ttk.Frame(source_host);row.pack(fill='x',pady=2)
         ttk.Label(row,text='Reference source').pack(side='left')
         picker=ttk.Combobox(row,textvariable=self.source_choice,values=list(self.source_choices.values()),state='readonly',width=48)
-        picker.pack(side='left',padx=10)
+        picker.pack(side='left',padx=10,fill='x',expand=True)
         picker.bind('<<ComboboxSelected>>',lambda e:self.select_source())
         self.name_panel=ttk.Frame(source_host,padding=(0,4))
-        ttk.Label(self.name_panel,text='Find a reference → write 39 lines → VoiceStudio → two samples → your approval → full pack.\nUses your Codex sign-in for text/source selection (counts toward usage); voice audio stays local.\nOnline searches/downloads may fail or find the wrong speaker. No login/cookie bypass; manual reference remains available.',wraplength=760).pack(anchor='w')
+        ttk.Label(self.name_panel,text='Find a reference → two tests → your approval → full pack. Manual reference is available if search fails.',wraplength=760).pack(anchor='w')
         self.direct_panel=ttk.Frame(source_host,padding=(0,4))
         ttk.Label(self.direct_panel,text='A clean 20–30-second clip or longer isolated master. We choose the best 10–20 seconds.',wraplength=760).pack(anchor='w')
-        row=ttk.Frame(self.direct_panel);row.pack(fill='x',pady=6)
+        row=ttk.Frame(self.direct_panel);row.pack(fill='x',pady=3)
         ttk.Entry(row,textvariable=self.master_file).pack(side='left',fill='x',expand=True)
         ttk.Button(row,text='Choose reference…',command=self.choose_master).pack(side='right',padx=6)
         self.direct_panel.pack(fill='x')
         self.episode_panel=ttk.Frame(source_host,padding=(0,4))
         ttk.Label(self.episode_panel,text='Add a few episodes and a 5–10-second solo character sample. Matching is local; you approve the result.',wraplength=760).pack(anchor='w')
-        row=ttk.Frame(self.episode_panel);row.pack(fill='x',pady=6)
+        row=ttk.Frame(self.episode_panel);row.pack(fill='x',pady=3)
         ttk.Entry(row,textvariable=self.seed).pack(side='left',fill='x',expand=True)
         ttk.Button(row,text='Choose character sample…',command=self.choose_seed).pack(side='right',padx=6)
-        self.episode_list=tk.Listbox(self.episode_panel,height=4,selectmode='extended')
+        self.episode_list=tk.Listbox(self.episode_panel,height=2,selectmode='extended')
         self.episode_list.pack(fill='x')
         row=ttk.Frame(self.episode_panel);row.pack(fill='x',pady=5)
         ttk.Button(row,text='Add episodes…',command=self.add_episodes).pack(side='left')
         ttk.Button(row,text='Remove selected from list',command=self.remove_episodes).pack(side='left',padx=6)
         self.timestamp_panel=ttk.Frame(source_host,padding=(0,4))
         ttk.Label(self.timestamp_panel,text='Choose an episode and the start of 5–10 seconds of solo character speech.\nWe find a longer matching reference, keep your script, and make only two test clips.',wraplength=760).pack(anchor='w')
-        row=ttk.Frame(self.timestamp_panel);row.pack(fill='x',pady=6)
+        row=ttk.Frame(self.timestamp_panel);row.pack(fill='x',pady=3)
         ttk.Entry(row,textvariable=self.episode_file).pack(side='left',fill='x',expand=True)
         ttk.Button(row,text='Choose episode…',command=self.choose_timestamp_episode).pack(side='right',padx=6)
         row=ttk.Frame(self.timestamp_panel);row.pack(fill='x')
@@ -357,26 +404,26 @@ class AddVoiceWizard(ttk.Frame):
         ttk.Entry(row,textvariable=self.episode_timestamp,width=12).pack(side='left',padx=6)
         ttk.Label(row,text='Sample length (5–10 seconds)').pack(side='left')
         ttk.Entry(row,textvariable=self.sample_seconds,width=5).pack(side='left',padx=6)
-        row=ttk.Frame(self.timestamp_panel);row.pack(fill='x',pady=6)
+        row=ttk.Frame(self.timestamp_panel);row.pack(fill='x',pady=3)
         ttk.Button(row,text='Find episodes in your video library',command=self.find_local_episodes).pack(side='left')
         self.local_episode_picker=ttk.Combobox(row,state='readonly')
         self.local_episode_picker.pack(side='left',fill='x',expand=True,padx=6)
         self.local_episode_picker.bind('<<ComboboxSelected>>',self.choose_local_episode)
         self.auto_scene_panel=ttk.Frame(source_host,padding=(0,4))
-        row=ttk.Frame(self.auto_scene_panel);row.pack(fill='x',pady=4)
+        row=ttk.Frame(self.auto_scene_panel);row.pack(fill='x',pady=2)
         ttk.Entry(row,textvariable=self.show_folder).pack(side='left',fill='x',expand=True)
         ttk.Button(row,text='Choose show folder…',command=self.choose_show_folder).pack(side='right',padx=6)
-        ttk.Checkbutton(self.auto_scene_panel,text='Use my Codex sign-in to review episode names, transcript excerpts and selected video frames',variable=self.scene_cloud_review).pack(anchor='w')
-        ttk.Label(self.auto_scene_panel,text='Only this folder is searched. Up to 3 episodes; first run may take several minutes per episode.\nAudio processing stays local; text/frame review uses your Codex allowance. No guaranteed speaker identification.\nSaved script → automatic reference → 2 samples → your approval. Nothing uploads to Waze yet.',wraplength=760).pack(anchor='w')
+
+        ttk.Label(self.auto_scene_panel,text='Searches this folder only. Up to 3 episodes → 2 tests for approval. Review uses the selected run mode.',wraplength=760).pack(anchor='w')
         self.youtube_panel=ttk.Frame(source_host,padding=(0,4))
-        ttk.Combobox(self.youtube_panel,textvariable=self.youtube_kind,values=['Character scenes','Person interviews'],state='readonly').pack(anchor='w')
+        ttk.Combobox(self.youtube_panel,textvariable=self.youtube_kind,values=['Auto - best source','Character scenes','Person interviews'],state='readonly').pack(anchor='w')
         for label,var in [('Search override (optional)',self.youtube_query),('YouTube video link (optional)',self.youtube_url)]:
-            row=ttk.Frame(self.youtube_panel);row.pack(fill='x',pady=4)
+            row=ttk.Frame(self.youtube_panel);row.pack(fill='x',pady=2)
             ttk.Label(row,text=label).pack(side='left');ttk.Entry(row,textvariable=var).pack(side='left',fill='x',expand=True,padx=6)
-        ttk.Checkbutton(self.youtube_panel,text='Use Codex to review video names, dialogue and selected frames',variable=self.scene_cloud_review).pack(anchor='w')
+
         ttk.Label(self.youtube_panel,text='Up to 3 public videos → 2 tests. A video link overrides search.',wraplength=740).pack(anchor='w')
         batch_link=ttk.Label(self.youtube_panel,text='Batch auditions: up to 4 voices →',foreground='#68a7ff',cursor='hand2')
-        batch_link.pack(anchor='w',pady=4)
+        batch_link.pack(anchor='w',pady=2)
         batch_link.bind('<Button-1>',lambda event:self.youtube_batch())
         def fit_labels(event):
             for panel in source_host.winfo_children():
@@ -384,6 +431,18 @@ class AddVoiceWizard(ttk.Frame):
                     if isinstance(child,ttk.Label):child.configure(wraplength=max(240,event.width-40))
         source_host.bind('<Configure>',fit_labels)
         self.show_source()
+        self.update_workflow_mode()
+
+    def connect_chatgpt(self):
+        import app_settings
+        app_settings.show(self.app)
+
+    def update_workflow_mode(self):
+        from workflow_modes import code,AUTOMATIC,FULL
+        cloud=code(self.workflow_mode.get())in (AUTOMATIC,FULL)
+        self.mode_help.set('AI writes the script and reviews references; approved references and reviews are reused. Audio stays local.' if code(self.workflow_mode.get())==FULL else 'ChatGPT/Codex writes the script only. Reference search, review and audio run locally.' if cloud else 'Paste your script; AI runs locally, with no Codex calls. Online sources and uploads need internet.')
+        if hasattr(self,'search_button') and not self.busy:
+            self.search_button.configure(text='Start all-in-one → make 2 tests' if cloud else 'Search locally → make 2 tests')
 
     def show_source(self):
         self.source_choice.set(self.source_choices.get(self.source_mode.get(),self.source_choices['reference']))
@@ -415,6 +474,7 @@ class AddVoiceWizard(ttk.Frame):
             self.direct_panel.pack_forget();self.episode_panel.pack_forget()
             self.name_panel.pack(fill='x')
             self.search_button.configure(text='Make my two samples →')
+        self.update_workflow_mode()
         self.start_canvas.yview_moveto(0)
 
     def select_source(self):
@@ -541,7 +601,7 @@ class AddVoiceWizard(ttk.Frame):
                     source_notes=path.with_suffix('.research.json')
                     research=json.loads(source_notes.read_text(encoding='utf-8-sig')) if source_notes.is_file() else {'sources':[],'delivery':'','writing_note':'Imported text file; research notes were not supplied.'}
                     path=save_pair(folder,title,text,research)
-                file=fork_script(dict(self.state_data,script_ideas=self.script_ideas.get('1.0','end').strip()),title,text,script_file=path)
+                file=fork_script(dict(self.state_data,script_ideas=self.script_ideas.get('1.0','end').strip(),script_options=script_options.values(self)),title,text,script_file=path)
                 self.resume_path(file)
                 self.restore()
                 self.tabs.select(self.generate_tab)
@@ -584,7 +644,7 @@ class AddVoiceWizard(ttk.Frame):
             self.library.set(str(character))
             self.state_data.update(character_folder=str(character),phase='draft',approved=False)
         values=self.snapshot()
-        self.state_data.update(description=values['description'],script_ideas=values['script_ideas'])
+        self.state_data.update(description=values['description'],script_ideas=values['script_ideas'],script_options=values['script_options'])
         if not self.state_data.get('analysis'):
             self.state_data.update(values)
         save(self.state_file,self.state_data)
@@ -597,7 +657,7 @@ class AddVoiceWizard(ttk.Frame):
         self.copy_script_prompt_button.configure(text='✓ Prompt copied' if copied else '1. Copy script prompt for AI',style='Success.TButton' if copied else 'Primary.TButton')
         self.paste_ai_reply_button.configure(text='✓ AI script loaded' if loaded else '2. Paste AI reply',style='Success.TButton' if loaded else 'Primary.TButton')
         for button in (self.script_ai_reply_button,self.approved_script_button):
-            button.configure(text='✓ AI script loaded — paste another reply' if loaded else 'Import AI reply from clipboard',
+            button.configure(text=('✓ AI script loaded\nPaste another reply' if loaded else 'Import AI reply\nfrom clipboard') if button==self.approved_script_button else ('✓ AI script loaded — paste another reply' if loaded else 'Import AI reply from clipboard'),
                              style='Success.TButton' if loaded else 'Primary.TButton',state='disabled' if self.busy else 'normal')
         ready=self.state_data.get('phase') in ('preview_ready','complete') or self.state_data.get('approved')
         self.search_button.configure(style='Success.TButton' if ready else 'Primary.TButton')
@@ -607,15 +667,30 @@ class AddVoiceWizard(ttk.Frame):
             self.script_step_status.set('Copy the prompt → ask your AI → paste its reply here → search for the voice.')
 
     def snapshot(self):
-        return {'app_version':VERSION,'name': self.name.get().strip(), 'script_title':self.script_title.get().strip(), 'description':self.description.get().strip(), 'script_ideas':self.script_ideas.get('1.0','end').strip(), 'master': self.master_file.get(),
+        from workflow_modes import code
+        return {'app_version':VERSION,'name': self.name.get().strip(), 'script_title':self.script_title.get().strip(), 'description':self.description.get().strip(), 'script_ideas':self.script_ideas.get('1.0','end').strip(), 'script_options':script_options.values(self), 'master': self.master_file.get(),
                 'source_mode':self.source_mode.get(),'seed':self.seed.get(),'episodes':list(self.episodes),
                 'episode_file':self.episode_file.get(),'episode_timestamp':self.episode_timestamp.get(),'sample_seconds':self.sample_seconds.get(),
                 'show_folder':self.show_folder.get(),'scene_cloud_review':self.scene_cloud_review.get(),
-                'youtube_query':self.youtube_query.get(),'youtube_url':self.youtube_url.get(),'youtube_kind':self.youtube_kind.get(),
+                'youtube_query':self.youtube_query.get(),'youtube_url':self.youtube_url.get(),'youtube_kind':self.youtube_kind.get(),'reference_search_strategy':self.state_data.get('reference_search_strategy','classic'),'short_reference_mode':self.state_data.get('reference_search_strategy','classic')=='progressive',
+                'workflow_mode':code(self.workflow_mode.get()),'confirm_speech_passages':True,'seed_matching':True,
                 'library': self.library.get(), 'script': self.script.get('1.0', 'end').strip(),
                 'start': float(self.start.get()), 'end': float(self.end.get())}
 
+    def refresh_saved_results(self):
+        if self.busy or self.script_variant_mode or not self.state_file:return
+        try:
+            saved=json.loads(self.state_file.read_text(encoding='utf-8-sig'))
+        except (OSError,ValueError):return
+        if saved.get('phase') not in ('preview_ready','voice_locked','complete'):return
+        if saved.get('name')!=self.state_data.get('name'):return
+        if (saved.get('phase'),saved.get('pack'))==(self.state_data.get('phase'),self.state_data.get('pack')):return
+        if self.script.get('1.0','end').strip()!=self.state_data.get('script','').strip():return
+        self.restore()
+        self.status.set('Saved results loaded. Listen to both tests before approving the voice.')
+
     def run(self, operation):
+        self.refresh_saved_results()
         if self.busy: return
         if operation in ('preview','retake') and not self.state_data.get('analysis'):
             # No reference means the next action is discovery, not synthesis.
@@ -638,13 +713,11 @@ class AddVoiceWizard(ttk.Frame):
             if not library.is_dir(): raise ValueError('Choose an existing working folder.')
             searching=operation in ('youtube','auto_scene','timestamp_preview','name','scan','episodes')
             if operation=='youtube':
-                if not values['scene_cloud_review']:raise ValueError('Enable Codex text/frame review to audition YouTube sources.')
                 if values['youtube_url'].strip():
                     from youtube_voice import video_id
                     video_id(values['youtube_url'])
             if operation=='auto_scene':
                 if not values['show_folder'] or not Path(values['show_folder']).is_dir():raise ValueError('Choose the actual show folder first.')
-                if not values['scene_cloud_review']:raise ValueError('Automatic selection requires text/frame review. Use Episode + timestamp for the local manual alternative.')
             if operation=='timestamp_preview':
                 from timestamp_voice import seconds
                 if not Path(values['episode_file']).is_file():raise ValueError('Choose an episode first.')
@@ -704,33 +777,50 @@ class AddVoiceWizard(ttk.Frame):
             self.timer.start()
             self.scan_audio_text.set('')
             if searching:
-                self.reference_progress.set('Speech detected: 0.0s · Usable reference: 0.0s · Target: 10–20 seconds of the same voice. Checking sources…')
+                self.reference_progress.set('Speech detected: 0.0s · Usable reference: 0.0s · Target: 6–10 seconds combined, or 10–20 seconds continuous. Checking sources…')
             if searching or operation in ('preview','retake'):
                 self.sample_durations={};self.test_audio_progress.set('Test audio: waiting for two clips.')
             self.begin_button_timing(operation)
             self.progress.start()
             self.status.set('Working locally. You can pause safely between clips.')
             if operation=='auto_scene':
-                self.status.set('Searching only your show folder. Local transcription + Codex text/frame review; stops at two samples.')
+                self.status.set('Searching only your show folder. Local transcription + local text/frame review; stops at two samples.')
             elif operation=='youtube':
-                self.status.set('Searching public YouTube sources. Codex reviews text/frames; VoiceStudio makes only two tests.')
+                self.status.set('Scanning speech on GPU. Confirm one correct voice clip, then match speech locally and make two tests.')
             self.tabs.select(self.generate_tab)
             self.tabs.tab(self.start_tab,state='disabled')
             self.tabs.tab(self.reference_tab, state='disabled'); self.tabs.tab(self.script_tab, state='disabled')
             self.resume_button.configure(state='disabled')
             for button in [self.test_button, self.regenerate_tests_button, self.approved_script_button, self.script_ai_reply_button, self.paste_ai_reply_button, self.copy_script_prompt_button, self.save_tests_button, self.final_preview_button, self.approve_button, self.repair_button, self.load_button, self.listen1, self.listen2]: button.configure(state='disabled')
-            self.pause_button.configure(state='normal',text='Pause search' if operation in ('auto_scene','youtube') else 'Pause after clip')
+            self.stop_button.configure(text='Stop search' if operation in ('auto_scene','youtube') else 'Pause generation')
+            self.pause_button.configure(state='normal',text='Stop search' if operation in ('auto_scene','youtube') else 'Pause after clip')
             def work():
                 try:
                     process = subprocess.Popen([str(RUNTIME), '-u', str(WORKER), operation, str(self.state_file)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf8', errors='replace', env={**os.environ, 'PYTHONIOENCODING': 'utf-8'}, creationflags=subprocess.CREATE_NO_WINDOW)
-                    for line in process.stdout: self.events.put(('log', line.rstrip()))
-                    code = process.wait()
+                    from worker_output import collect_worker
+                    code = collect_worker(process,lambda line:self.events.put(('log',line)))
                     self.events.put(('done', (operation, code)))
                 except Exception as exc:
                     self.events.put(('log', str(exc))); self.events.put(('done', (operation, 1)))
             threading.Thread(target=work, daemon=True).start()
         except Exception as exc:
             messagebox.showerror('Cannot start', str(exc), parent=self)
+
+    def find_different_reference(self):
+        if self.busy or not self.state_file:return
+        try:
+            from voice_library import alternative_reference
+            file,backup=alternative_reference(self.state_data,self.state_file)
+            mode=self.source_mode.get()
+            self.resume_path(file)
+            self.status.set('Previous reference and tests backed up: '+str(backup))
+            if mode in ('youtube','auto_scene','episodes','name'):
+                self.begin_search()
+            else:
+                self.tabs.select(self.start_tab)
+                self.status.set('Old reference backed up. Choose a different source, then make two tests. Script kept.')
+        except Exception as exc:
+            messagebox.showerror('Cannot find another reference',str(exc),parent=self)
 
     def approve(self):
         warning=self.state_data.get('reference_warning','')
@@ -755,10 +845,16 @@ class AddVoiceWizard(ttk.Frame):
     def pause(self):
         if self.busy and self.state_file:
             (self.state_file.parent/'PAUSE').touch()
-            self.status.set('Pause requested; waiting for the current clip or analysis segment.')
+            self.status.set('Stop requested. Cancelling reference review; saved work is retained.' if self.state_data.get('source_mode') in ('youtube','auto_scene') else 'Pause requested; waiting for the current clip.')
+
+    def stop_action(self):
+        self.stop()
+        if self.busy:self.pause()
 
     def restore(self):
         self.state_data = json.loads(self.state_file.read_text(encoding='utf8'))
+        from voice_library import recover_reference_path,save
+        if recover_reference_path(self.state_data):save(self.state_file,self.state_data)
         from voice_library import voice_is_approved,remember_voice_approval,approved_test_pack
         previous = self.state_data.get('signature', {})
         reference_changed = previous and any(previous.get(k) != self.state_data.get(v) for k,v in [('master','master_sha256'),('start','start'),('end','end')])
@@ -784,8 +880,8 @@ class AddVoiceWizard(ttk.Frame):
         if self.state_data.get('selected_reference') and self.state_data.get('analysis'):
             seconds=float(self.state_data.get('end',0))-float(self.state_data.get('start',0))
             kind=f"Combined reference ({self.state_data['selected_reference']['segment_count']} passages)" if self.state_data['selected_reference'].get('combined') else 'Selected reference'
-            self.reference_progress.set(f'{kind}: {seconds:.1f}s · Target: 10–20 seconds of the same voice. Listen to both tests before approving the voice.')
-        self.voice_status.set('Voice locked — importing scripts keeps this voice. Regenerate tests to change it.' if self.state_data.get('approved') else 'Voice reference: awaiting your sample approval')
+            self.reference_progress.set(f'{kind}: {seconds:.1f}s · Target: 6–10 seconds combined, or 10–20 seconds continuous. Listen to both tests before approving the voice.')
+        self.voice_status.set('Voice locked — importing scripts keeps this voice. Regenerate tests to change it.' if self.state_data.get('approved') else 'Voice reference: awaiting your sample approval' if self.state_data.get('analysis') else 'Voice reference: still searching / no accepted reference')
         self.fill_local_episodes()
         if self.state_data.get('phase')=='episode_timestamp_needed':
             self.source_mode.set('timestamp');self.show_source()
@@ -813,7 +909,7 @@ class AddVoiceWizard(ttk.Frame):
             try:
                 checks=json.loads((pack/'transcript-check.json').read_text(encoding='utf-8-sig'))
                 test_errors=[f"Test {i+1}: "+checks[s['id']].get('error','The words did not match; retry this test.') for i,s in enumerate(slots[:2]) if checks.get(s['id'],{}).get('review') is True]
-                failed_prompts=[s['waze_prompt'] for s in slots if checks.get(s['id'],{}).get('review') is True]
+                failed_prompts=[s['waze_prompt'] for s in slots if checks.get(s['id'],{}).get('review') is True or s['id'] in self.state_data.get('pending_listener_review',[])]
                 unchecked_count=sum(s['id'] not in checks for s in slots)
                 for s in slots[:2]:
                     if (checks.get(s['id'],{}).get('review') is False and
@@ -849,7 +945,7 @@ class AddVoiceWizard(ttk.Frame):
             for button, slot in zip([self.listen1, self.listen2], samples):
                 button.configure(state='normal' if (audition/slot['audio_file']).is_file() else 'disabled', style='Success.TButton')
         if test_errors:self.sample_info.set(self.sample_info.get()+'\n'+'\n'.join(test_errors))
-        self.regenerate_tests_button.configure(state='disabled' if phase=='complete' else 'normal',text='Regenerate both tests (unlock voice)' if self.state_data.get('approved') else 'Regenerate both tests')
+        self.regenerate_tests_button.configure(state='disabled' if phase=='complete' else 'normal',text='Keep reference\nRegenerate tests')
         from scan_progress import clip_seconds
         self.sample_durations={}
         sample_pack=Path(audition) if audition else pack
@@ -866,18 +962,19 @@ class AddVoiceWizard(ttk.Frame):
         self.load_button.configure(state='normal' if phase == 'complete' else 'disabled')
         self.inspect_button.configure(state='normal' if phase == 'complete' else 'disabled')
         self.test_button.configure(state='disabled' if phase == 'complete' else 'normal')
-        repair_ready=phase in ('review','paused') and bool(self.state_data.get('approved')) and bool(failed_prompts or unchecked_count)
+        self.test_button.configure(command=self.find_different_reference if playable_tests else lambda:self.run('preview'))
+        repair_ready=phase in ('review','paused','listener_review') and bool(self.state_data.get('approved')) and bool(failed_prompts or unchecked_count)
         self.repair_button.configure(state='normal' if repair_ready else 'disabled')
         approved = bool(self.state_data.get('approved'))
         if approved:
-            self.approved_script_button.pack(fill='x',pady=4)
+            self.approved_script_button.pack(fill='both',expand=True)
         else:
             self.approved_script_button.pack_forget()
         repaired = phase == 'complete' and self.state_data.get('repair_status') == 'complete'
         fault_free = phase == 'complete' and not failed_prompts and unchecked_count == 0 and tests_ready
-        self.test_button.configure(style='Success.TButton' if tests_ready else 'Primary.TButton',
-                                   text='✓ Two tests ready' if tests_ready or approved else 'Generate / retry missing tests',
-                                   state='disabled' if phase=='complete' or tests_ready or approved else 'normal')
+        self.test_button.configure(style='Primary.TButton',
+                                   text='Find different reference\nMake new tests' if playable_tests else 'Generate / retry missing tests',
+                                   state='normal' if playable_tests or phase!='complete' else 'disabled')
         self.approve_button.configure(style='Success.TButton' if phase=='complete' else 'Primary.TButton',
                                       text='✓ All 39 complete' if phase=='complete' else 'Generate / resume all 39')
         if not self.state_data.get('analysis'):
@@ -885,11 +982,13 @@ class AddVoiceWizard(ttk.Frame):
             self.regenerate_tests_button.configure(state='disabled')
         if approved and not self.state_data.get('script_selected') and phase!='complete':
             self.approve_button.configure(text='Choose script: Load file / Copy prompt',state='normal')
+        if phase in ('speech_confirmation','seed_confirmation'):
+            self.test_button.configure(text='Listen and confirm character',command=self.confirm_source_identity,state='normal')
         count_text=f'{len(failed_prompts)} failed'+(f', {unchecked_count} unchecked' if unchecked_count else '')
         self.repair_button.configure(style='Success.TButton' if fault_free else ('Primary.TButton' if repair_ready else 'TButton'),
-                                     text=('✓ Failed clips repaired' if repaired else '✓ No repairs needed') if fault_free else f'Repair clips ({count_text})')
+                                     text=('✓ Clips repaired' if repaired else '✓ No repairs needed') if fault_free else f'Repair clips\n{count_text}')
         details=('Failed: '+'; '.join(failed_prompts)) if failed_prompts else ''
-        if unchecked_count and phase in ('review','paused'):
+        if unchecked_count and phase in ('review','paused','listener_review'):
             details+=f'  {unchecked_count} clips are not checked yet. Repair also generates missing clips.'
         if failed_prompts and not approved:details+='  Approve the voice tests before repairing the full run.'
         self.repair_details.set(details)
@@ -902,7 +1001,7 @@ class AddVoiceWizard(ttk.Frame):
             if isinstance(seconds,(int,float)) and seconds>=0:
                 outcome=self.state_data.get('step_outcomes',{}).get(key,'')
                 suffix=(' · '+outcome) if outcome in ('failed','needs review','paused') else ''
-                button.configure(text=button.cget('text')+' · '+duration(seconds)+suffix)
+                button.configure(text=button.cget('text')+'\n'+duration(seconds)+suffix)
         if failed_prompts and isinstance(timings.get('generation'),(int,float)):
             self.repair_details.set(self.repair_details.get()+'  Generation took '+duration(timings['generation'])+'.')
 
@@ -917,6 +1016,10 @@ class AddVoiceWizard(ttk.Frame):
             path=resolve_workflow(path)
             data = json.loads(Path(path).read_text(encoding='utf8'))
             from timestamp_voice import saved_script
+            from auto_scene import youtube_context
+            if data.get('source_mode')=='auto_scene' and youtube_context(data):
+                from voice_library import save
+                data['source_mode']='youtube';save(Path(path),data)
             recovered_script=saved_script(data,Path(path))
             for required in ['name', 'master', 'library', 'script']:
                 if required not in data: raise ValueError('Not an Add Voice workflow file.')
@@ -924,11 +1027,14 @@ class AddVoiceWizard(ttk.Frame):
             self.script_variant_mode=False
             self.description.set(data.get('description',''))
             self.script_ideas.delete('1.0','end');self.script_ideas.insert('1.0',data.get('script_ideas',''))
+            script_options.restore(self,data.get('script_options',{}))
             self.script_title.set(data.get('script_title','Original'))
             self.source_mode.set(data.get('source_mode','reference'));self.seed.set(data.get('seed',''))
             self.episode_file.set(data.get('episode_file',''));self.episode_timestamp.set(data.get('episode_timestamp','00:00'));self.sample_seconds.set(data.get('sample_seconds','7'))
             self.show_folder.set(data.get('show_folder',''));self.scene_cloud_review.set(data.get('scene_cloud_review',True))
             self.youtube_query.set(data.get('youtube_query',''));self.youtube_url.set(data.get('youtube_url',''));self.youtube_kind.set(data.get('youtube_kind','Character scenes'))
+            from workflow_modes import LABELS,code
+            self.workflow_mode.set(LABELS[code(data.get('workflow_mode','local'))])
             self.episodes=data.get('episodes',[]);self.refresh_episode_list();self.show_source()
             for var, key in [(self.name,'name'),(self.master_file,'master'),(self.library,'library'),(self.start,'start'),(self.end,'end')]: var.set(data.get(key, 0))
             self.script.delete('1.0','end'); self.script.insert('1.0',data['script'])
@@ -936,6 +1042,8 @@ class AddVoiceWizard(ttk.Frame):
             self.script.delete('1.0','end');self.script.insert('1.0',recovered_script)
             if not data.get('analysis'):self.tabs.select(self.start_tab)
             if data.get('phase','').startswith('auto_scene_'):self.tabs.select(self.start_tab)
+            if data.get('phase') in ('seed_confirmation','speech_confirmation'):self.after(200,self.confirm_source_identity)
+            if data.get('phase') in ('review','listener_review') and data.get('approved'):self.after(250,self.review_failed_clips)
             self.status.set('Workflow restored. Generate tests or resume the approved full run.')
             if not data.get('analysis'):
                 self.status.set('Saved script restored. Choose Episode + timestamp, select your episode, and enter where the character speaks alone.')
@@ -974,7 +1082,7 @@ class AddVoiceWizard(ttk.Frame):
             if not self.state_file:raise ValueError('Create or load a voice and select its reference first.')
             if self.name.get().strip().casefold()!=self.state_data['name'].casefold():raise ValueError('Start a new voice to use a different character.')
             from voice_library import fork_script
-            file=fork_script(dict(self.state_data,script_ideas=self.script_ideas.get('1.0','end').strip()),self.script_title.get(),self.script.get('1.0','end').strip())
+            file=fork_script(dict(self.state_data,script_ideas=self.script_ideas.get('1.0','end').strip(),script_options=script_options.values(self)),self.script_title.get(),self.script.get('1.0','end').strip())
             self.resume_path(file);self.tabs.select(self.generate_tab)
             self.status.set('New script saved. Voice locked; click Generate / resume all 39.' if self.state_data.get('approved') else 'New script saved. Generate two tests and approve the voice first.')
             return True
@@ -1010,10 +1118,122 @@ class AddVoiceWizard(ttk.Frame):
         if not player: return messagebox.showerror('Preview unavailable','FFplay is required.',parent=self)
         self.player = subprocess.Popen([player,'-nodisp','-autoexit','-loglevel','error',*extra,str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
 
+    def confirm_source_identity(self):
+        if self.busy or self.state_data.get('phase') not in ('speech_confirmation','seed_confirmation'):return
+        enrolling=self.state_data.get('phase')=='seed_confirmation'
+        candidates=self.state_data.get('speech_candidates',[])
+        if not candidates:return
+        dialog=tk.Toplevel(self);dialog.title('Confirm scanned speech');dialog.transient(self.winfo_toplevel())
+        dialog.geometry('680x330');dialog.grab_set()
+        identity=self.state_data.get('research',{}).get('identity') or self.state_data.get('description') or self.state_data.get('name')
+        ttk.Label(dialog,text='Choose one correct voice clip' if enrolling else 'Is each passage the requested character?',font=('',14,'bold')).pack(anchor='w',padx=16,pady=10)
+        ttk.Label(dialog,text=identity,wraplength=640).pack(anchor='w',padx=16)
+        caption=tk.StringVar();ttk.Label(dialog,textvariable=caption,wraplength=640).pack(anchor='w',padx=16,pady=14)
+        index=[0]
+        def listen():
+            part=candidates[index[0]]
+            caption.set(f"Passage {index[0]+1} of {len(candidates)} - {part.get('speaker') or 'unlabeled speaker'} - {part['end']-part.get('start',0):.1f}s\n"+part.get('text',''))
+            self.play(part['file'],['-ss',str(part.get('start',0)),'-t',str(part['end']-part.get('start',0))])
+        def choose(accepted):
+            self.stop();part=candidates[index[0]]
+            if accepted and enrolling:
+                try:
+                    from seeded_reference import enroll
+                    enroll(self.state_data,self.state_file,part)
+                except Exception as exc:
+                    messagebox.showerror('Cannot save confirmed voice',str(exc),parent=dialog);return
+                dialog.destroy();self.run('youtube');return
+            if not accepted and enrolling:
+                from seeded_reference import fingerprint
+                self.state_data.setdefault('rejected_seed_hashes',[]).append(fingerprint(part))
+                if part.get('speaker'):self.state_data.setdefault('rejected_seed_speakers',[]).append(dict(source_file=part['source_file'],speaker=part['speaker']))
+            if accepted:
+                digest=hashlib.sha256(Path(part['file']).read_bytes()).hexdigest()
+                self.state_data.setdefault('confirmed_speech_hashes',[]).append(digest)
+            else:
+                self.state_data.setdefault('excluded_reference_windows',[]).append(dict(source_file=part['source_file'],start=part['source_start'],end=part['source_end']))
+            from voice_library import save
+            save(self.state_file,self.state_data)
+            index[0]+=1
+            if index[0]<len(candidates):listen();return
+            self.state_data['phase']='youtube_reference_needed'
+            self.state_data.pop('rejected_reference_sources',None)
+            save(self.state_file,self.state_data)
+            dialog.destroy();self.run('youtube' if self.state_data.get('source_mode')=='youtube' else 'auto_scene')
+        row=ttk.Frame(dialog);row.pack(fill='x',padx=16,pady=8)
+        ttk.Button(row,text='Replay passage',command=listen).pack(side='left')
+        ttk.Button(row,text='Use as voice anchor' if enrolling else 'Correct voice - keep',command=lambda:choose(True)).pack(side='left',padx=8)
+        ttk.Button(row,text='Wrong voice - reject',command=lambda:choose(False)).pack(side='left')
+        ttk.Button(dialog,text='Decide later',command=lambda:(self.stop(),dialog.destroy())).pack(anchor='e',padx=16,pady=8)
+        dialog.protocol('WM_DELETE_WINDOW',lambda:(self.stop(),dialog.destroy()))
+        listen()
+
+    def review_failed_clips(self):
+        if self.busy or not self.state_file:return
+        from clip_review import request
+        try:items=request(RUNTIME,'failed',self.state_file)
+        except Exception as exc:return messagebox.showerror('Cannot review clips',str(exc),parent=self)
+        if not items:return self.run('generate')
+        dialog=tk.Toplevel(self);dialog.title('Review failed clips');dialog.transient(self.winfo_toplevel())
+        dialog.update_idletasks()
+        width,height=800,420
+        x=max(0,(dialog.winfo_screenwidth()-width)//2);y=max(0,(dialog.winfo_screenheight()-height)//2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}');dialog.grab_set()
+        title=tk.StringVar();detail=tk.StringVar();index=[0];played=[False]
+        ttk.Label(dialog,textvariable=title,font=('',14,'bold')).pack(anchor='w',padx=18,pady=10)
+        ttk.Label(dialog,textvariable=detail,wraplength=750).pack(anchor='w',padx=18,pady=8)
+        ttk.Label(dialog,text='Spoken line - edit only if you want to change the script:').pack(anchor='w',padx=18)
+        text=tk.Text(dialog,height=3,wrap='word');text.pack(fill='x',padx=18,pady=8)
+        feedback=tk.StringVar();ttk.Label(dialog,textvariable=feedback,wraplength=750).pack(anchor='w',padx=18)
+        buttons=ttk.Frame(dialog);buttons.pack(fill='x',padx=18,pady=12)
+        def show():
+            item=items[index[0]];check=item['check'];played[0]=False
+            title.set(f"{index[0]+1} of {len(items)}: "+item['slot']['waze_prompt'])
+            detail.set('Expected: '+item['slot']['spoken_text']+'\nDetected: '+check.get('recognized','No transcript available')+'\nReason: '+(check.get('error') or 'Missing words: '+', '.join(check.get('missing_keywords',[]))+f"; word agreement {check.get('word_agreement',0):.0%}"))
+            text.delete('1.0','end');text.insert('1.0',item['slot']['spoken_text']);feedback.set('Listen before accepting. Directions, distances and warnings must stay correct.')
+        def listen():
+            if not Path(items[index[0]]['path']).is_file():return feedback.set('No saved audio. Regenerate this line.')
+            played[0]=False;accept_button.configure(state='disabled')
+            self.play(items[index[0]]['path']);playback=self.player
+            def finished_playing():
+                if not dialog.winfo_exists():return
+                if playback is None:return feedback.set('Playback did not start. Try Play clip again.')
+                if self.player is not playback:return
+                if playback.poll() is None:self.after(100,finished_playing);return
+                if playback.returncode==0:
+                    played[0]=True;accept_button.configure(state='normal')
+                else:feedback.set('Playback stopped before completion. Click Play clip to listen again.')
+            self.after(100,finished_playing)
+        def finish():
+            self.stop();dialog.destroy();self.state_data=json.loads(self.state_file.read_text(encoding='utf8'));self.script.delete('1.0','end');self.script.insert('1.0',self.state_data['script']);self.restore();self.run('generate')
+        def approve():
+            if not played[0]:return feedback.set('Click Play clip and listen before accepting it.')
+            item=items[index[0]]
+            if text.get('1.0','end').strip()!=item['slot']['spoken_text']:return feedback.set('The text was edited. Use Save edit and retry instead.')
+            try:request(RUNTIME,'accept',self.state_file,item['slot']['id'])
+            except Exception as exc:return feedback.set(str(exc))
+            self.stop();index[0]+=1
+            if index[0]<len(items):show();listen()
+            else:finish()
+        def retry():
+            item=items[index[0]];new=text.get('1.0','end').strip()
+            try:
+                if new!=item['slot']['spoken_text']:request(RUNTIME,'edit',self.state_file,item['slot']['id'],new)
+            except Exception as exc:return feedback.set(str(exc))
+            try:request(RUNTIME,'retry',self.state_file,item['slot']['id'])
+            except Exception as exc:return feedback.set(str(exc))
+            self.stop();dialog.destroy();self.state_data=json.loads(self.state_file.read_text(encoding='utf8'));self.script.delete('1.0','end');self.script.insert('1.0',self.state_data['script']);self.restore();self.run('repair')
+        ttk.Button(buttons,text='Play clip',command=listen).pack(side='left')
+        accept_button=ttk.Button(buttons,text='Accept audio as correct',command=approve,state='disabled');accept_button.pack(side='left',padx=8)
+        ttk.Button(buttons,text='Save edit and retry' ,command=retry).pack(side='left')
+        ttk.Button(buttons,text='Close',command=lambda:(self.stop(),dialog.destroy())).pack(side='right')
+        dialog.protocol('WM_DELETE_WINDOW',lambda:(self.stop(),dialog.destroy()))
+        show();listen()
+
     def play_reference(self):
         try:
             start, end = float(self.start.get()), float(self.end.get())
-            if not 10 <= end-start <= 20.001: raise ValueError('Select a 10–20-second window.')
+            if not 6 <= end-start <= 20.001: raise ValueError('Select a 6–20-second window.')
             self.play(self.state_data['analysis'], ['-ss',str(start),'-t',str(end-start)])
         except Exception as exc: messagebox.showerror('Cannot preview',str(exc),parent=self)
 
@@ -1022,7 +1242,7 @@ class AddVoiceWizard(ttk.Frame):
         from script_agent_prompt import build_prompt
         try:
             ideas=self.script_ideas.get('1.0','end').strip()
-            prompt=build_prompt(self.name.get(),self.description.get(),ideas)
+            prompt=build_prompt(self.name.get(),self.description.get(),ideas,script_options.values(self))
             self.save_start_draft()
             from voice_library import save
             self.state_data['script_prompt_copied']=True
@@ -1115,6 +1335,7 @@ class AddVoiceWizard(ttk.Frame):
         self.test_audio_progress.set(' · '.join(parts)+f' · Checked test audio: {usable:.1f}s')
 
     def poll(self):
+        self.refresh_saved_results()
         while not self.events.empty():
             kind, value = self.events.get()
             if kind == 'log':
@@ -1156,7 +1377,7 @@ class AddVoiceWizard(ttk.Frame):
                     elif operation=='repair':key='repair'
                     if key:
                         saved.setdefault('step_durations',{})[key]=max(0,self.timer.ended-self.timer.started)
-                        outcome='failed' if code else ('paused' if 'paused' in (phase or '') else 'needs review' if phase in ('review','youtube_reference_needed','episode_review','auto_scene_review') else 'finished')
+                        outcome='failed' if code else ('paused' if 'paused' in (phase or '') else 'needs review' if phase in ('review','listener_review','youtube_reference_needed','episode_review','auto_scene_review') else 'finished')
                         saved.setdefault('step_outcomes',{})[key]=outcome
                         from voice_library import save
                         save(self.state_file,saved)
@@ -1172,6 +1393,8 @@ class AddVoiceWizard(ttk.Frame):
                     for button,title in self.active_timing_buttons:
                         if button==self.search_button or operation in ('scan','episodes','validate'):
                             button.configure(text=f'{title} · {"Stopped" if code else "Finished"} · {final}')
+                if self.state_data.get('phase') in ('speech_confirmation','seed_confirmation'):self.after(100,self.confirm_source_identity)
+                if operation in ('generate','repair','rerun') and self.state_data.get('phase') in ('review','listener_review') and self.state_data.get('approved'):self.after(150,self.review_failed_clips)
                 self.active_timing_buttons=[]
                 self.progress.finish(code==0 and self.state_data.get('phase') not in ('review','paused','auto_scene_paused','youtube_reference_needed','episode_paused','episode_review'))
                 if operation in ('scan','episodes') and code == 0 and self.state_data.get('phase')=='reference':
@@ -1184,11 +1407,30 @@ class AddVoiceWizard(ttk.Frame):
             self.live_indicator.set(f'{pulse} Live — {self._audio_stage}'+age)
         else:
             phase=self.state_data.get('phase')
-            self.live_indicator.set('● Two test clips ready' if phase=='preview_ready' else '● Pack ready' if phase=='complete' else '○ Paused' if phase in ('paused','auto_scene_paused') else '○ Needs review' if phase in ('review','youtube_reference_needed','auto_scene_review') else '○ Ready')
+            self.stop_button.configure(text='Stop preview')
+            self.live_indicator.set('● Two test clips ready' if phase=='preview_ready' else '● Pack ready' if phase=='complete' else '○ Paused' if phase in ('paused','auto_scene_paused') else '○ Needs review' if phase in ('review','listener_review','youtube_reference_needed','auto_scene_review') else '○ Ready')
+        if time.monotonic()-self._last_tally_refresh>2:
+            self._last_tally_refresh=time.monotonic()
+            self.refresh_time_tally()
         self.timer_text.set(self.timer.text())
         self.update_button_timing()
         self.load_button.configure(state='normal' if not self.busy and not self.script_variant_mode and self.state_data.get('phase')=='complete' and self.app.phone_ready else 'disabled')
         self.after(100,self.poll)
+
+    def refresh_time_tally(self):
+        from process_times import totals
+        from operation_timer import duration
+        folder=self.state_data.get('character_folder')
+        if not folder:return
+        try:
+            values,prior=totals(folder)
+            labels=[('search','Search'),('tests','Tests'),('generation','Generate'),('upload','Upload')]
+            labels += [(key,label) for key,label in [('repair','Repair'),('other','Setup/script'),('earlier','Earlier*')] if key in values]
+            parts=[label+' '+(duration(values[key]) if key in values else '—') for key,label in labels]
+            parts.append('Known total '+duration(sum(values.values())+prior))
+            if prior:parts.append('Earlier* '+duration(prior))
+            self.voice_time_tally.set('  |  '.join(parts))
+        except (OSError,ValueError):self.voice_time_tally.set('Process time: unable to read saved totals')
 
     def close(self):
         if self.busy:

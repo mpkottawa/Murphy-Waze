@@ -1,3 +1,5 @@
 @echo off
-"%~dp0.runtime\bin\codex.exe" login
+pushd "%~dp000database\Tools"
+".venv\Scripts\python.exe" -c "from cloud_workflow import connect; connect().wait()"
+popd
 pause

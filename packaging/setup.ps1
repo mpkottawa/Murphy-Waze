@@ -1,4 +1,4 @@
-param([string]$AppRoot = (Split-Path $PSScriptRoot -Parent), [switch]$CheckOnly)
+param([string]$AppRoot = (Split-Path $PSScriptRoot -Parent), [switch]$CheckOnly, [switch]$IncludeOfflineReviewer)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 # Installer hosts can pass a module path from a different PowerShell edition.
@@ -74,10 +74,10 @@ function Test-Tool([string]$Path, [string]$VersionArgument, [string]$MinimumVers
 }
 try {
     Set-Location -LiteralPath $tools
-    Write-Host 'Waze Voice Studio dependency setup. Large downloads can take a while.'
+    Write-Host 'Murphy Waze dependency setup. Large downloads can take a while.'
     $script:manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
     if ($CheckOnly) {
-        foreach ($name in @('python.tar.gz','ffmpeg.zip','adb.zip','codex.zip','deno.zip','yt-dlp.exe','VoiceStudio.exe','vc_redist.exe')) {
+        foreach ($name in @('python.tar.gz','ffmpeg.zip','adb.zip','deno.zip','yt-dlp.exe','VoiceStudio.exe','vc_redist.exe','codex.zip')) {
             if (-not $manifest.$name -or $manifest.$name.sha256 -notmatch '^[a-f0-9]{64}$' -or $manifest.$name.url -notmatch '^https://') { throw "Invalid dependency manifest: $name" }
         }
         Write-Host 'Manifest valid.'
@@ -102,7 +102,7 @@ try {
     } else { Write-Host 'SKIP Microsoft C++ runtime: compatible version already installed.' }
     $bin = Join-Path $runtime 'bin'
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
-    foreach ($pair in @(@('ffmpeg.zip','ffmpeg'),@('adb.zip','adb'),@('codex.zip','codex'),@('deno.zip','deno'))) {
+    foreach ($pair in @(@('ffmpeg.zip','ffmpeg'),@('adb.zip','adb'),@('deno.zip','deno'))) {
         $out = Join-Path $runtime $pair[1]
         $healthy = $false
         switch ($pair[1]) {
@@ -111,20 +111,14 @@ try {
                 if ($ff) { $healthy = (Test-Tool $ff.FullName '-version' '4.4') -and (Test-Tool (Join-Path $ff.DirectoryName 'ffprobe.exe') '-version' '4.4') -and (Test-Tool (Join-Path $ff.DirectoryName 'ffplay.exe') '-version' '4.4') }
             }
             'adb' { $healthy = Test-Tool (Join-Path $out 'platform-tools\adb.exe') 'version' '1.0.41' }
-            'codex' { $healthy = (Test-Tool (Join-Path $bin 'codex.exe') '--version' '0.163.0') -and (Test-Path -LiteralPath (Join-Path $bin 'codex-resources\codex-windows-sandbox-setup.exe')) }
+
             'deno' { $healthy = Test-Tool (Join-Path $out 'deno.exe') '--version' '2.9.7' }
         }
         if ($healthy) { Write-Host "SKIP $($pair[1]): existing tools passed their executable checks."; continue }
         $zip = Get-Dependency $pair[0]
         Expand-Archive -LiteralPath $zip -DestinationPath $out -Force
-        if ($pair[1] -eq 'codex') {
-            $codex = Join-Path $out 'codex-x86_64-pc-windows-msvc.exe'
-            if (-not (Test-Path -LiteralPath $codex)) { throw 'Codex archive did not contain its main executable.' }
-            Copy-Item -Path (Join-Path $out '*') -Destination $bin -Recurse -Force
-            Copy-Item -LiteralPath $codex -Destination (Join-Path $bin 'codex.exe') -Force
-        }
+
     }
-    Run-Checked (Join-Path $bin 'codex.exe') @('--version')
     $yt = Join-Path $tools 'vendor\yt-dlp'
     New-Item -ItemType Directory -Force -Path $yt | Out-Null
     if (Test-Tool (Join-Path $yt 'yt-dlp.exe') '--version' '2026.8.19') { Write-Host 'SKIP yt-dlp: existing downloader passed its executable check.' }
@@ -147,6 +141,25 @@ try {
         Run-Checked $vp @('-m','pip','install','-r',(Join-Path $tools $item[1]))
         if (-not (Test-PrivateRuntime $vp $kind $requirements)) { throw "$kind environment did not pass verification after installation." }
     }
+    $codexTarget = Join-Path $tools 'vendor\codex'
+    New-Item -ItemType Directory -Force -Path $codexTarget | Out-Null
+    $privateCodex = Join-Path $codexTarget 'codex.exe'
+    $existingCodex = $null
+    $command = Get-Command codex.exe -ErrorAction SilentlyContinue
+    if ($command) { $existingCodex = $command.Source }
+    if (-not $existingCodex) {
+        $candidate = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\*\codex.exe') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($candidate) { $existingCodex = $candidate.FullName }
+    }
+    if ((Test-Tool $privateCodex '--version' '0.163.0') -or ($existingCodex -and (Test-Tool $existingCodex '--version' '0.163.0'))) {
+        Write-Host 'SKIP Codex connector: compatible executable already installed.'
+    } else {
+        Expand-Archive -LiteralPath (Get-Dependency 'codex.zip') -DestinationPath $codexTarget -Force
+        $downloaded = Get-ChildItem -Path $codexTarget -Filter 'codex*.exe' -Recurse | Where-Object { $_.Name -notmatch 'sandbox|setup|app-server|exec-server' } | Select-Object -First 1
+        if (-not $downloaded) { throw 'Codex archive has no CLI executable.' }
+        if ($downloaded.FullName -ne $privateCodex) { Copy-Item -LiteralPath $downloaded.FullName -Destination $privateCodex -Force }
+        if (-not (Test-Tool $privateCodex '--version' '0.163.0')) { throw 'Codex connector verification failed.' }
+    }
     $guiPython = Join-Path $tools '.venv\Scripts\python.exe'
     $voiceSetup = Join-Path $PSScriptRoot 'voicestudio_setup.py'
     $voiceStudio = & $guiPython $voiceSetup --discover
@@ -157,10 +170,11 @@ try {
     Run-Checked (Join-Path $tools '.venv\Scripts\python.exe') @('-c','import tkinter, requests, blackboxprotobuf; import pack_builder_gui')
     Run-Checked (Join-Path $tools '.worker\Scripts\python.exe') @('-c','import torch, torchaudio, faster_whisper, speechbrain, soundfile')
     Write-Host 'Audio runtime imports passed.'
-    if (Test-Tool (Join-Path $bin 'codex.exe') 'login status') { Write-Host 'SKIP Codex sign-in: your existing account login was detected.' }
-    else { Write-Host 'Personal sign-in needed for automatic AI review: use Sign in to Codex in the Start menu. All local dependencies are installed.' }
+    Run-Checked $guiPython @((Join-Path $tools 'setup_speaker_diarization.py'))
+    if ($IncludeOfflineReviewer) { Run-Checked $guiPython @((Join-Path $tools 'setup_local_review.py')) }
+    else { Write-Host 'Optional offline text reviewer is available from Set up local reference review; Full AI does not require it.' }
     @{version=(Get-Content -LiteralPath (Join-Path $AppRoot 'VERSION.txt') -Raw).Trim();completed=(Get-Date).ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath $ready -Encoding UTF8
-    Write-Host 'Setup complete: VoiceStudio, required models and analysis models are ready. Existing healthy components were skipped. If needed, use Sign in to Codex for your personal account.'
+    Write-Host 'Setup complete. Existing healthy components were skipped. Open Settings / updates to connect ChatGPT, choose a model, and finish any Hugging Face model consent. Local/manual mode remains available.'
 } catch {
     Write-Host "SETUP FAILED: $_" -ForegroundColor Red
     Write-Host "Log: $log. Use Repair dependency setup from the Start menu to retry. Your voices are preserved."

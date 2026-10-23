@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import uuid
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,9 +27,15 @@ def read_json(path):
 def write_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    for attempt in range(20):
+        try:
+            temporary.replace(path)
+            break
+        except PermissionError:
+            if attempt==19:raise
+            time.sleep(.05)
 
 
 def digest(path):

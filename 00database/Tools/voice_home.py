@@ -1,3 +1,4 @@
+import script_options
 """Inline character library and name-first entry page."""
 import json
 import os
@@ -8,24 +9,39 @@ from voice_library import entries,VOICES
 
 class VoiceHome(ttk.Frame):
     def __init__(self,parent,app):
-        super().__init__(parent,padding=20);self.app=app;self.pack(fill='both',expand=True)
-        ttk.Label(self,text='Your voice studio',font=('',22,'bold')).pack(anchor='w')
-        ttk.Label(self,text='Name a voice → listen to two tests → approve all 39 → upload when ready.').pack(anchor='w',pady=8)
-        form=ttk.LabelFrame(self,text='Create a voice',padding=12);form.pack(fill='x',pady=12)
+        super().__init__(parent,padding=10);self.app=app;self.pack(fill='both',expand=True)
+        heading=ttk.Frame(self);heading.pack(fill='x')
+        logo=Path(__file__).resolve().parents[2]/'assets'/'waze-voice-studio-murph-cat.png'
+        if logo.is_file():
+            original=tk.PhotoImage(master=self,file=str(logo))
+            factor=max(1,(max(original.width(),original.height())+127)//128)
+            self.murph_logo=original.subsample(factor,factor)
+            ttk.Label(heading,image=self.murph_logo).pack(side='left',padx=(4,20))
+        heading_text=ttk.Frame(heading);heading_text.pack(side='left',fill='x',expand=True)
+        ttk.Label(heading_text,text='Murphy Waze',font=('',22,'bold')).pack(anchor='w')
+        ttk.Label(heading_text,text='Name a voice → listen to two tests → approve all 39 → upload when ready.').pack(anchor='w',pady=8)
+        form=ttk.LabelFrame(self,text='Create a voice',padding=12);form.pack(fill='x',pady=6)
         self.name=tk.StringVar();self.description=tk.StringVar()
         ttk.Label(form,text='Character / person / voice name').grid(row=0,column=0,sticky='w')
         ttk.Entry(form,textvariable=self.name).grid(row=0,column=1,sticky='ew',padx=10,pady=4)
         ttk.Label(form,text='Description or delivery').grid(row=1,column=0,sticky='w')
         ttk.Entry(form,textvariable=self.description).grid(row=1,column=1,sticky='ew',padx=10,pady=4)
         ttk.Label(form,text='Quotes, words & script ideas (optional)').grid(row=2,column=0,sticky='nw',pady=4)
-        self.script_ideas=tk.Text(form,height=3,wrap='word',undo=True)
+        self.script_ideas=tk.Text(form,height=2,wrap='word',undo=True)
         self.script_ideas.grid(row=2,column=1,columnspan=2,sticky='ew',padx=10,pady=4)
         ttk.Label(form,text='Favorite quotes, catchphrases, names or topics — one per line.').grid(row=3,column=1,columnspan=2,sticky='w',padx=10)
-        self.kind=tk.StringVar(value='Character scenes')
-        ttk.Combobox(form,textvariable=self.kind,values=['Character scenes','Person interviews','I have a reference'],state='readonly').grid(row=4,column=1,sticky='w',padx=10,pady=8)
-        ttk.Button(form,text='Set up my two tests →',style='Primary.TButton',command=self.create).grid(row=4,column=2,padx=8)
+        script_options.controls(form,self).grid(row=4,column=0,columnspan=3,sticky='ew',pady=4)
+        self.kind=tk.StringVar(value='Auto - best source')
+        from workflow_modes import LABELS,LOCAL,DEFAULT,default_mode
+        self.workflow_mode=tk.StringVar(value=LABELS[default_mode()])
+        ttk.Label(form,text='Run mode').grid(row=5,column=0,sticky='w')
+        ttk.Combobox(form,textvariable=self.workflow_mode,values=list(LABELS.values()),state='readonly',width=32).grid(row=5,column=1,sticky='w',padx=10,pady=6)
+        ttk.Combobox(form,textvariable=self.kind,values=['Auto - best source','Character scenes','Person interviews','I have a reference'],state='readonly').grid(row=6,column=1,sticky='w',padx=10,pady=8)
+        self.create_button=ttk.Button(form,text='Start automatically →',style='Primary.TButton',command=self.create)
+        self.create_button.grid(row=6,column=2,padx=8)
+        self.workflow_mode.trace_add('write',lambda *args:self.create_button.configure(text='Start automatically →' if self.workflow_mode.get() in (LABELS['all_in_one'],LABELS['full_ai']) else 'Set up my two tests →'))
         form.columnconfigure(1,weight=1)
-        ttk.Label(form,text='Description shapes the script; it does not guarantee a matching voice. You can supply your own recording.').grid(row=5,column=0,columnspan=3,sticky='w')
+        ttk.Label(form,text='All-in-one uses ChatGPT/Codex. Offline AI uses a pasted script and local processing; online sources still need internet.').grid(row=7,column=0,columnspan=3,sticky='w')
         row=ttk.Frame(self);row.pack(fill='x',pady=8)
         ttk.Label(row,text='Saved voices',font=('',14,'bold')).pack(side='left')
         self.query=tk.StringVar();self.query.trace_add('write',lambda *a:self.refresh())
@@ -40,6 +56,13 @@ class VoiceHome(ttk.Frame):
         self.tree.configure(yscrollcommand=scroll.set);scroll.pack(side='right',fill='y')
         self.tree.pack(fill='both',expand=True);self.tree.bind('<Double-1>',lambda e:self.open())
         self.tree.bind('<Delete>',self.delete_selected)
+        self.voice_menu=tk.Menu(self,tearoff=False)
+        self.voice_menu.add_command(label='Open / continue',command=self.open)
+        self.voice_menu.add_command(label='Open voice folder',command=self.folder)
+        self.voice_menu.add_separator()
+        self.voice_menu.add_command(label='Delete entire voice...',command=self.delete_selected)
+        self.tree.bind('<Button-3>',self.context_menu)
+        self.tree.bind('<Shift-F10>',self.context_menu)
         self.tree.bind('<<TreeviewSelect>>',self.refresh_scripts)
         script_row=ttk.Frame(self);script_row.pack(fill='x',pady=(8,0))
         ttk.Label(script_row,text='Saved script for selected voice').pack(side='left')
@@ -47,13 +70,29 @@ class VoiceHome(ttk.Frame):
         self.script_picker.pack(side='left',fill='x',expand=True,padx=8)
         self.script_button=ttk.Button(script_row,text='Use selected script →',command=self.use_selected_script,state='disabled')
         self.script_button.pack(side='left')
-        row=ttk.Frame(self);row.pack(fill='x',pady=12)
+        row=ttk.Frame(self);row.pack(fill='x',pady=6)
         ttk.Button(row,text='Open / continue selected',command=self.open).pack(side='left')
         ttk.Button(row,text='Open voice folder',command=self.folder).pack(side='left',padx=8)
         ttk.Button(row,text='Reuse voice / new script',command=self.reuse).pack(side='left',padx=8)
         ttk.Button(row,text='Load character folder…',command=self.load_character).pack(side='left')
-        ttk.Button(row,text='Delete selected…',command=self.delete_selected).pack(side='right')
+        ttk.Button(row,text='Delete entire voice…',command=self.delete_selected).pack(side='right')
         ttk.Label(self,text=str(VOICES)).pack(anchor='w');self.refresh()
+
+    def context_menu(self,event):
+        if getattr(event,'num',None)==3:
+            item=self.tree.identify_row(event.y)
+            if not item:return 'break'
+            self.tree.selection_set(item);self.tree.focus(item)
+            x,y=event.x_root,event.y_root
+        else:
+            selected=self.tree.selection()
+            if not selected:return 'break'
+            box=self.tree.bbox(selected[0])
+            if not box:return 'break'
+            x,y=self.tree.winfo_rootx()+box[0]+30,self.tree.winfo_rooty()+box[1]+box[3]
+        try:self.voice_menu.tk_popup(x,y)
+        finally:self.voice_menu.grab_release()
+        return 'break'
 
     def refresh(self):
         selected=self.selected() if hasattr(self,'rows') else None
@@ -112,9 +151,13 @@ class VoiceHome(ttk.Frame):
         if wizard is None:return
         wizard.name.set(self.name.get().strip());wizard.description.set(self.description.get().strip())
         wizard.script_ideas.delete('1.0','end');wizard.script_ideas.insert('1.0',self.script_ideas.get('1.0','end').strip())
+        script_options.restore(wizard,script_options.values(self))
+        wizard.workflow_mode.set(self.workflow_mode.get())
         wizard.source_mode.set('reference' if self.kind.get()=='I have a reference' else 'youtube')
         wizard.youtube_kind.set(self.kind.get() if self.kind.get()!='I have a reference' else 'Person interviews')
         wizard.show_source();wizard.start_canvas.yview_moveto(0)
+        from workflow_modes import code,AUTOMATIC,FULL
+        if code(self.workflow_mode.get())in (AUTOMATIC,FULL) and wizard.source_mode.get()=='youtube':wizard.begin_search()
 
     def open(self):
         row=self.selected()
@@ -127,23 +170,23 @@ class VoiceHome(ttk.Frame):
     def delete_selected(self,event=None):
         row=self.selected()
         if not row:return 'break'
-        if not row['file']:
-            messagebox.showinfo('Saved scripts only','This voice has saved scripts but no run to delete.',parent=self)
-            return 'break'
-        wizard=self.app.voice_wizard
+        wizard=getattr(self.app,'voice_wizard',None)
         if self.app.busy or (wizard and wizard.busy) or getattr(self.app,'batch_panel',None):
-            messagebox.showinfo('Work in progress','Finish or pause active work before deleting a run.',parent=self)
+            messagebox.showinfo('Work in progress','Finish or stop active work before deleting a voice.',parent=self)
             return 'break'
-        title=f"{row['name']} — {row['script_title']} (run {Path(row['file']).parent.name})"
-        if not messagebox.askyesno('Delete selected run?',title+'\n\nRemove only this run from My voices? Other runs, scripts, references, audio files and Waze uploads stay untouched. This is a recoverable removal from the list, not disk cleanup.',parent=self):return 'break'
         try:
-            from voice_library import archive_run
-            archive_run(row['file'])
-            if wizard and wizard.state_file and Path(wizard.state_file).resolve()==Path(row['file']).resolve():
+            from voice_delete import checked_folder,delete_voice
+            folder=checked_folder(row['folder'])
+            if not messagebox.askyesno('Permanently delete entire voice?',
+                f"Delete {row['name']} and ALL its runs?\n\n{folder}\n\nThis permanently removes every file in this local voice folder: scripts, references, source downloads, tests and generated audio. It cannot be undone in the app.\n\nYour separate backup folder and previously uploaded Waze voices are not deleted.\n\nDelete the entire voice folder?",parent=self,default='no',icon='warning'):return 'break'
+            delete_voice(folder)
+            if wizard and wizard.state_file and Path(wizard.state_file).resolve().is_relative_to(folder):
                 wizard.destroy();self.app.voice_wizard=None
             self.refresh()
-            messagebox.showinfo('Run removed','Removed from My voices. Files remain in the run folder. To restore, remove the deleted flag from its workflow.json.',parent=self)
-        except Exception as exc:messagebox.showerror('Cannot delete run',str(exc),parent=self)
+            messagebox.showinfo('Voice deleted','The entire local voice folder and all its runs were deleted. Your separate backups remain untouched.',parent=self)
+        except Exception as exc:
+            self.refresh()
+            messagebox.showerror('Voice deletion not completed',str(exc)+'\n\nIf file removal had already started, some files may have been removed. Separate backups are never targeted.',parent=self)
         return 'break'
 
     def folder(self):

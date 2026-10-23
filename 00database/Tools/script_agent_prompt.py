@@ -1,7 +1,9 @@
 """Portable, provider-independent script brief using the app's live slot roster."""
 from pack_builder import PROMPTS
 
-def build_prompt(name, description='', script_ideas=''):
+def build_prompt(name, description='', script_ideas='', style_options=None):
+    from script_options import instructions
+    style_notes=instructions(style_options)
     name=name.strip()
     if not name:raise ValueError('Enter a voice / character name first.')
     slots='\n'.join(f'{label} → [spoken line]' for _,label in PROMPTS[:39])
@@ -12,6 +14,7 @@ My optional quotes, words and script ideas:
 {script_ideas.strip() or 'No additional preferences.'}
 Use these preferences where they fit naturally; do not force every item into the script. Treat supplied quotes as suggestions to verify, not proof of authentic dialogue. Preserve navigation accuracy and timing even when shortening or omitting a suggestion.
 
+{style_notes}
 Research before writing. Identify the exact character/person and their source show, films or performances; ask me if ambiguous. Use reliable interviews, official clips or transcripts when available. Verify recognizable catchphrases, recurring references, vocabulary, comic timing and speech patterns; do not invent quotes or claim unverified dialogue is authentic. If browsing is unavailable, disclose that separately. Prefer original lines with brief recognizable catchphrases over copied dialogue. Do not confuse this character with another role played by the same actor.
 
 Make the script feel specific, not generic wording with the name pasted in. Capture attitude, rhythm, pauses, understatement or enthusiasm through natural wording and light punctuation. Vary the opening and arrival lines with well-chosen references. Keep jokes understandable and avoid forcing a reference into every direction. Never put stage directions, emotion tags, phonetic spellings, citations or bracketed acting instructions into spoken lines: the voice engine may read them aloud. Put any inflection guidance in separate delivery notes. A script guides delivery but cannot guarantee a particular cloned voice.

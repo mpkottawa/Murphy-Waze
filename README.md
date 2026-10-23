@@ -1,93 +1,113 @@
-# Waze Voice Studio
+# Murphy Waze
 
-**Create, preview, back up and upload Waze voice packs on Windows.** Current release: **1.0.01**.
+<p align="center"><img src="assets/waze-voice-studio-murph-cat.png" width="240" alt="Murph driving a white 2010-2012 Lincoln MKZ"></p>
 
-[Download Windows installer](https://github.com/mpkottawa/Waze-Voice-Studio/releases/download/v1.0.01/Waze-Voice-Studio-1.0.01-Windows-x64-Setup.exe) | [Releases](https://github.com/mpkottawa/Waze-Voice-Studio/releases) | [Report a problem](https://github.com/mpkottawa/Waze-Voice-Studio/issues)
+Create character-inspired Waze voice packs on your Windows PC: name a voice, confirm an original speech sample, listen to two generated tests, approve, generate all 39 prompts, then upload when you choose.
 
-Create a script, find or supply reference audio, approve two test clips, and generate all 39 navigation prompts. You can also load existing MP3/WAV recordings or working English voices from the online catalog. Preview prompts, build a compatible pack and explicitly upload it to receive a Waze installation link.
+**[Download the Windows installer](https://github.com/mpkottawa/Murphy-Waze/releases/download/v2.0.00/Murphy-Waze-2.0.00-Windows-x64-Setup.exe)** | [Latest release](https://github.com/mpkottawa/Murphy-Waze/releases/latest) | [Report an issue](https://github.com/mpkottawa/Murphy-Waze/issues)
 
-## Windows installation guide
+## Supported computers
 
-### Requirements
+This release supports **Windows 10/11, 64-bit x64 only**. macOS and Linux may be considered in future releases; this package does not support them.
 
-- **Windows 10 or 11, Intel/AMD x64.** This release does not support macOS, Linux or Windows ARM.
-- Internet for setup, model downloads, online searches and uploads.
-- **30 GB free disk space recommended**, plus room for recordings. Large model choices and caches can require more.
-- A GPU is optional; CPU generation can be much slower. NVIDIA acceleration depends on VoiceStudio's engine and driver support. See [VoiceStudio Windows requirements](https://github.com/debpalash/VoiceStudio/blob/v0.5.6/docs/install/windows.md).
-- Your own Codex login for automatic AI script writing/source review. Manual scripts and supplied references can be used without automatic AI review.
+| Requirement | Guidance |
+|---|---|
+| Processor | Intel/AMD x64. A recent Core i5 can use CPU mode; speed depends strongly on its generation and power limits. |
+| Memory | 16 GB RAM recommended. Close other heavy applications while generating. |
+| Graphics | NVIDIA CUDA is optional and much faster. Intel integrated graphics uses the CPU path, not CUDA acceleration. |
+| Storage | Allow at least 30 GB free for dependencies/models/caches, plus your voice recordings. An SSD is recommended. |
+| Network | Internet for installation/model downloads, online reference sources, automatic AI scripts and uploads. |
 
-### Install using one setup download
+**An i5 laptop with 16 GB and integrated graphics should be able to use CPU mode, but it has not been benchmarked on that exact hardware.** Expect much slower reference analysis and voice generation than on an NVIDIA desktop. Fast desktop timings and the five-minute reference-search budget do not guarantee a completed test on a CPU laptop. Reusing a saved approved reference or supplying a clean reference clip avoids much of the search work.
 
-1. Download **Waze-Voice-Studio-1.0.01-Windows-x64-Setup.exe** from the [1.0.01 release](https://github.com/mpkottawa/Waze-Voice-Studio/releases/tag/v1.0.01).
-2. Run it and choose a local, writable folder. Default: `%LOCALAPPDATA%\Programs\Waze Voice Studio`. Avoid mapped/network drives.
-3. Leave the dependency window open. Setup automatically downloads verified Python, FFmpeg/FFplay, Android Platform Tools, Codex CLI, Deno, yt-dlp and the separate VoiceStudio application. It creates isolated Python environments and installs audio analysis packages. Microsoft's C++ runtime may request administrator approval if missing.
-4. Setup automatically prepares VoiceStudio, selects a CPU or NVIDIA runtime when a new environment is needed, downloads missing required models, configures OmniVoice and verifies that it initializes. It also prepares Whisper and speaker-analysis models. **You do not need to open VoiceStudio to complete setup.** Its local API uses `http://127.0.0.1:3900`.
-5. For automatic AI source review, open **Start > Waze Voice Studio > Sign in to Codex** only if setup says a login is missing. Complete the browser login using your own account; existing sign-ins are reused. See [official authentication guidance](https://developers.openai.com/codex/auth/). Setup does not supply or copy credentials.
-6. Open **Waze Voice Studio** from the desktop or Start menu.
+VoiceStudio documents CPU operation and recommends 16 GB+ RAM: [upstream requirements](https://voicestudio.sh/download). Murphy Waze also installs separate scanning/analysis dependencies, hence the larger disk-space allowance above. A managed work laptop may need your IT department to permit executable/model downloads, the Microsoft runtime installation and Android debugging.
 
-This is an **all-in-one online installer**, not an offline bundle: one setup file prepares the dependencies, VoiceStudio runtime and required models. Only personal account authentication (when needed) and Windows administrator approval for a missing C++ runtime require your interaction. Large downloads can take many minutes; keep the setup window open. Setup finishes only after required imports and model initialization pass.
+## Install: one file
 
-This initial installer is **not code-signed**, so Windows may show an unrecognized publisher notice. Use only this repository's release assets and compare the installer SHA-256 with `SHA256SUMS.txt` on the release page.
+1. Download **Murphy-Waze-2.0.00-Windows-x64-Setup.exe** using the link above. You do not need Git, a Python installation, Docker or a separate VoiceStudio download.
+2. Run it and select a writable local folder. The default is `%LOCALAPPDATA%\Programs\Murphy Waze`. To upgrade an existing Waze Voice Studio installation, keep its existing installation folder.
+3. Leave setup running while it checks dependencies and downloads missing components. Existing compatible tools and verified cached downloads are reused. First-time downloads can take a while and total several GB.
+4. Setup installs/prepares Python, VoiceStudio, PyTorch/audio packages, speech/speaker models, FFmpeg/FFplay/FFprobe, yt-dlp, Deno, Android tools, the Codex connector and the Microsoft C++ runtime as needed.
+5. **VoiceStudio first-run setup is automatic:** the script creates its managed runtime, downloads its required models, selects OmniVoice and initializes the engine. It chooses CPU mode when a supported NVIDIA GPU is unavailable.
+6. Open **Murphy Waze** from the desktop or Start menu, then complete the account steps below.
 
-### Interrupted or failed installation
+This is a single installer with Internet downloads, **not a fully offline bundle**. It is unsigned. Download it only from this repository and compare the release's `SHA256SUMS.txt` when verifying files. Windows may show a publisher/security prompt; on a work computer, follow your organization's software-installation policy.
 
-Use **Start > Waze Voice Studio > Repair dependency setup**. Valid cached downloads are reused. The log is `.runtime\setup.log` inside the installation folder. A changed download/checksum stops setup; report the message through Issues.
+## First-time accounts: guided setup
 
-Setup checks actual tool versions, Python requirements/imports and dependency health before installing. Healthy components are logged as **SKIP**, without re-extracting tool archives or running pip installs. Existing VoiceStudio installations are detected in conventional locations and Windows uninstall records; its custom runtime location is respected. For an unregistered installation, set `WVS_VOICESTUDIO_EXE` to its full executable path before running setup. Automatic runtime creation is pinned to VoiceStudio 0.5.6; a compatible running newer service can be reused, but an uninitialized unsupported version is reported rather than modified. Existing recordings, profiles and model caches are retained. A running compatible backend is reused and is never stopped by setup. A different/incompatible runtime is reported rather than silently overwritten.
+### AI scripts
 
-## Create a new voice
+Open **Settings / updates > AI setup**:
 
-1. Open **Create / continue > Start a new voice**. Enter the name, delivery description and optional quotes/script ideas.
-2. **Copy script prompt**, give it to your AI assistant, then **Paste AI reply**. Completed steps turn green. The reply must use the app's 39-slot script format.
-3. Search YouTube, choose an episode/timestamp, or supply your own reference recording. Your video library defaults to Windows Videos; use the episode/folder picker for other locations.
-4. Watch the live scan status. The app checks usable speech and speaker consistency and can combine checked short passages. A search may find no suitable reference; select another source and retry.
-5. Listen to **both test clips**, then approve the voice. The tests use the loaded script. Approval locks the reference across subsequent script imports.
-6. Click **Generate / resume all 39**. Repair retries failed clips and preserves the exact script, character jokes included. Timing repair trims silence or modestly adjusts tempo; unresolved clips need review.
-7. Review the pack, then explicitly select **Upload to Waze**. Auditions and generation never upload automatically.
+- **ChatGPT - automatic:** select it, click **Save preferences**, then **Sign in with ChatGPT**. Complete the official browser/console flow, return and click **Check setup**. Leave Model blank for the account default or select a model available to your account. Account eligibility and usage limits apply.
+- **Any assistant - paste scripts myself:** no AI login is required by Murphy Waze. Use the app's **Copy script prompt for AI**, send it to your preferred assistant, then use **Paste AI reply** with its complete JSON response.
+- **Other provider - existing Codex profile:** advanced option for a compatible provider already configured in Codex. Enter that profile name and model. Provider API credentials/access may be required; an ordinary website login or another assistant's chat subscription alone does not configure its API. There is no universal provider-password form.
 
-Pasting another AI script preserves the approved voice. Explicitly regenerating voice tests or changing its reference unlocks it. Saved voices and runs appear in **My voices**.
+Passwords are entered only through the official sign-in tools. Murphy Waze saves provider/model preferences, not your passwords or API keys. Official credential stores handle authentication. Settings checks do not send a paid generation request.
 
-Automatic AI reference review sends candidate metadata, transcripts/dialogue and selected frames to Codex. Audio generation itself uses your local VoiceStudio service. Turn off AI review or supply your own reference when you do not want automatic source review.
+### Hugging Face and speaker models
 
-## Existing MP3s and online voices
+Open **Settings / updates > Dependencies > Set up voice models / Hugging Face**. The guide checks what is already ready and shows the next step:
 
-- In **Pack & upload**, use **Load audio folder** or **Load studio pack**. Matching uses filenames/labels, never file order. Assign missing clips explicitly and double-click a prompt to preview it.
-- **Browse online voices** lists English entries whose archives passed download checks. Load one and listen. Download validation does not confirm the speaker in every clip.
-- Build a compatible pack after editing recordings/mappings. The builder fits custom six-second clip limits and the upload budget. Unchanged imported archives can preserve their original MP3s.
-- **Upload to Waze** creates a new share link. The app downloads it and compares audio hashes before reporting verification. Actual phone playback still needs checking; caching and fallback prompts may behave differently.
+1. Click **1. Sign in**. Complete the official Hugging Face console/browser flow using a free account. If offered browser sign-in, use the displayed link/code. If you choose a token, enter it only in that official console, never in a chat.
+2. Click **2. Accept model access**. While signed into the same account, accept the access conditions on [pyannote Community-1](https://huggingface.co/pyannote/speaker-diarization-community-1).
+3. Return and click **Check setup**, then **3. Download / finish setup**. The full resumable installation finishes missing dependencies and model downloads. It checks again when finished.
 
-## Get the voice onto your phone
+Website login alone does not authenticate the local downloader. Sign-in and model consent cannot be accepted automatically for you. No separate VoiceStudio or public-YouTube login is normally needed. The optional legacy Ollama text reviewer is not required for the current listener-confirmed reference search.
 
-Open the generated **Waze link on your phone**, accept the voice in Waze, then select it in Waze's voice settings. Uploading from Windows does not select the voice automatically on the phone.
+## Make your first voice
 
-For optional Android USB features, enable Developer options and USB debugging, connect the cable and accept the PC authorization on the phone. Use the phone-link action to write HTML/text links into internal storage. Some phones require their manufacturer's USB driver. USB backup/link automation uses ADB and is Android-only; iPhones can open the shared Waze links.
+1. On **My voices**, enter the exact character/person name and show/source if needed.
+2. Add delivery notes or script ideas. Check **Vulgar / profanity**, **Adult humor**, **Catchphrases**, **Character jokes** and/or **Character delivery** as desired. These are saved per run and guide new copied/automatic script requests; changing them does not rewrite an existing script. A selected profanity style is checked and may trigger one script revision rather than silently accepting a clean script.
+3. Choose **Full AI - automatic** for the automatic script workflow, or **Offline AI / local PC** for a pasted script. Online source downloads still require Internet in local mode.
+4. Start. The app checks for an approved saved reference first; otherwise it searches and scans source speech locally. Listen to the extracted candidate and confirm only the intended speaker. Reject wrong voices. Titles alone are not speaker proof.
+5. Listen to both generated tests. **Keep reference / Regenerate tests** tries another rendering; **Find different reference / Make new tests** preserves the old reference and searches again.
+6. **Save approved voice**, then **Generate / resume all 39**. Generation, transcription, speaker matching and audio repairs run on your PC.
+7. If a clip fails, open repair review. Play it, compare the text, explicitly accept correct audio or edit/retry that one line. Retried audio waits for listener review. Passing clips stay saved.
+8. Review the finished pack and choose **Final step: Upload to Waze** when ready. Upload never happens merely because generation finished.
 
-Check every prompt/direction before using a pack. Missing prompts can use Waze's fallback voice. The online catalog and unofficial upload protocol can change independently of this app.
+Character delivery guides wording/rhythm and separate performance notes. The reference audio and voice engine determine actual pitch and timbre; text instructions cannot guarantee a likeness. Listen before approval.
 
-## Files, updates and uninstalling
+## Phone delivery and sharing
 
-Voices live in `Voices\<name>\Runs\<run>`; script variants live in each voice's `Scripts` folder. Imported archives/exports live under `00database`. Back up **Voices** and original imported audio before changing installations.
+Install/open Waze on your Android phone. For PC-to-phone delivery, enable Android **Developer options > USB debugging**, connect by USB or configured wireless debugging, and accept **Allow USB debugging** on the phone. A work policy may disable this feature. The app shows connected/authorized status.
 
-Private Python environments remain isolated from unrelated system Python installations. Data lives beside the app in its writable per-user folder. Updates in the same folder replace app source, not recordings. Uninstall removes installed source/shortcuts but preserves generated voices, runtimes and caches; remove the remaining folder yourself only after backing up needed files. The separate VoiceStudio application and model cache have their own uninstall process.
+After a verified upload, generated Waze links are saved to local HTML/text share files and, when enabled and connected, copied to the phone. Open the generated Waze link on the phone to install the voice. No phone account password is entered into Murphy Waze.
 
-Existing development libraries are not automatically relocated. Use **Resume a saved workflow** or load a pack from the original location, and retain a backup.
+## Backups and deleting voices
 
-## Build from source
+Choose a separate backup folder in **Settings / updates > Library and backups**. Reusable reference audio, confirmed voice anchors, generated material and metadata are saved in voice-name folders with hash checks. Model caches and credentials are excluded. VoiceStudio profile IDs may be machine-specific; reusable reference audio is preserved.
 
-On Windows x64:
+**Right-click > Delete entire voice** permanently removes that local voice folder, including every run, script, source download, reference and generated recording, after confirmation. The configured separate backup folder and previous Waze uploads are not deleted. It does not follow folder links into their external targets and refuses to delete a running voice. Keep backups outside the live `Voices` folder.
 
-```powershell
-git clone https://github.com/mpkottawa/Waze-Voice-Studio.git
-cd Waze-Voice-Studio
-powershell -NoProfile -ExecutionPolicy Bypass -File packaging\build.ps1
-```
+To carry a voice to another computer, copy its portable reference backup, choose **Use my voice reference** on the other PC, and import/paste a script. Do not copy Python environments or credential files between computers.
 
-The script downloads a pinned, signed Inno Setup compiler, verifies its hash/signature, then writes the installer and checksums into `dist`. The release tag contains the complete app and installer source. No recordings, model caches or account files are packaged. Runtime downloads are pinned in `packaging/dependencies.json`; Python root packages are pinned in the two requirements files, with transitive versions resolved at installation.
+## Updates
 
-To run from source, run `Repair dependency setup.cmd`, complete first-run steps, then run `powershell -NoProfile -ExecutionPolicy Bypass -File "Open Waze Voice Studio.ps1"`.
+For the first installation use the full `.exe`. For subsequent compatible releases:
 
-## License and credits
+1. Download the trusted `.mwupdate` file from this repository's release page.
+2. Finish/stop current voice work.
+3. Open **Settings / updates > Updates > Choose update file and install**.
+4. Check the displayed target version and confirm. The app closes, verifies/applies files, checks dependencies and restarts.
 
-[GPL-3.0](LICENSE). Upload protocol/catalog: [pipeeeeees/waze-voicepack-links](https://github.com/pipeeeeees/waze-voicepack-links). Generation engine application: [VoiceStudio](https://github.com/debpalash/VoiceStudio). See [third-party notices](THIRD_PARTY_NOTICES.md). Model and recording licenses are separate.
+Updates reject altered hashes, unexpected/unsafe paths, incompatible bases and downgrades. They preserve voice libraries, backups, personal settings, models and sign-ins. Replaced application files have rollback copies under `.runtime/updates/rollback`. If application replacement/setup fails, app files are restored; dependency package changes may not be reversible. `last-result.json` in that directory records the result. Hashes check integrity, not publisher identity; use trusted files.
 
-An independent community project, not affiliated with Waze or Google.
+You can also rerun the full installer over the same app directory. The local 2.0.01-2.0.12 builds were development iterations consolidated into this public **2.0.00**; use the full installer to switch those development installations to this release.
+
+## Troubleshooting
+
+- **Missing/red dependency:** Settings / updates > Dependencies > **Finish / repair installation**, then **Scan**. Healthy components are reused.
+- **Hugging Face access denied:** finish local sign-in and accept Community-1 conditions with the same account, then finish setup again.
+- **No suitable reference:** try the exact name/show, a specific public video URL, or a clean local clip. A short listener-confirmed phrase can anchor matching; the app collects matching passages. CPU searches may need retries.
+- **Slow on integrated graphics:** this is CPU operation. Close memory-heavy apps, keep the laptop plugged in, and reuse saved references. There is no promise of desktop-GPU speed.
+- **Installation interrupted:** rerun the installer or Finish / repair installation. Logs are `.runtime/setup.log` and `.runtime/voicestudio-startup.log` inside the app folder; startup failures use `.runtime/startup.log`.
+- **Old window/version remains:** close the old app and reopen Murphy Waze using its shortcut. Wait for active work before restarting.
+
+When reporting a problem, include the app version and relevant error text. Review logs before sharing; do not include tokens, passwords or private recordings.
+
+## Source and building
+
+Source is provided under [GPL-3.0](LICENSE). Dependencies/models have their own terms: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Run `python packaging/validate.py`, the Python unit tests, and `powershell -NoProfile -ExecutionPolicy Bypass -File packaging/build.ps1` on Windows. The build creates an allowlisted installer and update payload; it excludes recordings, private configuration, credentials, caches, installed runtimes and developer tests. Release checksums are in `SHA256SUMS.txt`.
+
+This independent project is not affiliated with Waze, Google, OpenAI, Hugging Face, Lincoln or VoiceStudio. Use recordings you are entitled to use.

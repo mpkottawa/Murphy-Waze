@@ -12,6 +12,56 @@ from pack_builder import PROMPTS
 from add_voice_wizard import AddVoiceWizard
 
 class LockedVoiceUI(unittest.TestCase):
+    def test_approved_actions_fit_without_scrolling_while_generating(self):
+        from app_theme import AppTheme
+        root=tk.Tk();root.attributes('-alpha',0);root.geometry('1920x1000+0+0')
+        try:
+            theme=AppTheme(root)
+            header=ttk.Frame(root,style='Header.TFrame',padding=(22,6));header.pack(fill='x')
+            ttk.Label(header,text='ralph wiggum',style='Header.TLabel').pack()
+            pages=ttk.Notebook(root);pages.pack(fill='both',expand=True)
+            page=ttk.Frame(pages);pages.add(page,text='Create / continue')
+            wizard=AddVoiceWizard(SimpleNamespace(create_page=page,pages=pages,
+                phone_status=tk.StringVar(value='Phone connected'),fresh_voice=lambda:None))
+            root.update();wizard.tabs.select(wizard.generate_tab)
+            wizard.state_data={'approved':True,'ai_reply_loaded':True};wizard.update_script_steps()
+            wizard.approved_script_button.pack(fill='both',expand=True)
+            wizard.approve_button.configure(text='Generating all 39\nElapsed 00:37 · ETA ~04:07')
+            wizard.regenerate_tests_button.configure(text='Regenerate both tests\n(unlock voice)')
+            for width,height in [(1920,1000),(1280,900)]:
+                root.geometry(f'{width}x{height}+0+0')
+                for _ in range(3):root.update();wizard.balance_workspace()
+                bottom=wizard.generate_canvas.winfo_rooty()+wizard.generate_canvas.winfo_height()
+                for name in ('save_tests_button','approve_button','repair_button','approved_script_button','listen1','regenerate_tests_button'):
+                    button=getattr(wizard,name)
+                    self.assertLessEqual(button.winfo_rooty()+button.winfo_height(),bottom,(width,height,name))
+                    self.assertGreaterEqual(button.winfo_width(),button.winfo_reqwidth(),(width,height,name,'text width'))
+            self.assertFalse(wizard.repair_label.winfo_manager())
+            for width,height in [(1920,1000),(1280,900)]:
+                root.geometry(f'{width}x{height}+0+0')
+                wizard.tabs.select(wizard.start_tab)
+                for mode in wizard.source_choices:
+                    wizard.source_mode.set(mode);wizard.show_source()
+                    for _ in range(6):root.update();wizard.balance_workspace()
+                    self.assertLessEqual(wizard.start_body.winfo_reqheight(),wizard.start_canvas.winfo_height(),(width,height,mode))
+                    self.assertGreaterEqual(wizard.search_button.winfo_height(),wizard.search_button.winfo_reqheight())
+
+        finally:root.destroy()
+
+    def test_external_results_refresh_without_discarding_unsaved_script(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temp:
+            file=Path(temp)/'workflow.json'
+            file.write_text(json.dumps(dict(name='Howard',phase='preview_ready',pack='saved-pack')))
+            wizard=SimpleNamespace(busy=False,script_variant_mode=False,state_file=file,
+                state_data=dict(name='Howard',phase='draft',pack=None,script='saved script'),
+                script=SimpleNamespace(get=lambda *args:'saved script'),restore=Mock(),status=Mock())
+            AddVoiceWizard.refresh_saved_results(wizard)
+            wizard.restore.assert_called_once()
+            wizard.restore.reset_mock();wizard.script=SimpleNamespace(get=lambda *args:'unsaved changes')
+            AddVoiceWizard.refresh_saved_results(wizard)
+            wizard.restore.assert_not_called()
+
     def test_new_voice_copy_paste_then_search_keeps_script(self):
         import add_voice_wizard as module
         with tempfile.TemporaryDirectory() as temp:
@@ -98,6 +148,8 @@ class LockedVoiceUI(unittest.TestCase):
                     from voice_home import VoiceHome
                     with patch('voice_home.entries',return_value=[]):
                         home=VoiceHome(ui,SimpleNamespace(fresh_voice=lambda:wizard))
+                    from workflow_modes import LABELS,LOCAL
+                    home.workflow_mode.set(LABELS[LOCAL])
                     home.name.set('Rafi')
                     home.script_ideas.insert('1.0','Pocket dogs\nBrian\nDirty Randy')
                     home.create()

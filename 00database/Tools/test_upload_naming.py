@@ -5,6 +5,13 @@ from pathlib import Path
 from upload_naming import result_for_name,suggested_name
 
 class NamingTests(unittest.TestCase):
+    def test_generated_voice_defaults_to_person_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);folder=root/'Pack'/'Waze MP3'/'encoded';folder.mkdir(parents=True)
+            (root/'workflow.json').write_text(json.dumps({'name':'Howard Stern'}))
+            (folder/'pack.json').write_text(json.dumps({'name':'Howard Stern VoiceStudio'}))
+            self.assertEqual(suggested_name(folder/'ready.tar.gz'),'Howard Stern')
+
     def test_exact_unicode_names_and_distinct_uploads(self):
         with tempfile.TemporaryDirectory() as tmp:
             archive=Path(tmp)/'ready.tar.gz'

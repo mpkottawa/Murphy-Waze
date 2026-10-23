@@ -175,7 +175,7 @@ def install_runtime(exe, root, cpu=False):
     project.mkdir(parents=True, exist_ok=True)
     if shutil.disk_usage(project).free < 10 * 1024**3:
         raise RuntimeError('At least 10 GiB free is needed for VoiceStudio runtime setup.')
-    (project/'.runtime-installing').write_text('Waze Voice Studio setup', encoding='utf-8')
+    (project/'.runtime-installing').write_text('Murphy Waze setup', encoding='utf-8')
     for name in SOURCE_NAMES:
         source, destination = bundle/name, project/name
         if source.is_dir():

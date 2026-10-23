@@ -2,6 +2,8 @@ param([string]$Compiler)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $build = Join-Path $root 'build'
+& python (Join-Path $PSScriptRoot 'build_payload.py')
+if ($LASTEXITCODE -ne 0) { throw 'Payload build failed.' }
 New-Item -ItemType Directory -Force -Path $build | Out-Null
 if (-not $Compiler) {
     $Compiler = Join-Path $build 'inno\ISCC.exe'
@@ -17,7 +19,7 @@ if (-not $Compiler) {
 & $Compiler (Join-Path $PSScriptRoot 'installer.iss')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 $version = (Get-Content -LiteralPath (Join-Path $root 'VERSION.txt') -Raw).Trim()
-$exe = Join-Path $root "dist\Waze-Voice-Studio-$version-Windows-x64-Setup.exe"
-$hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-"$hash  $([IO.Path]::GetFileName($exe))" | Set-Content -LiteralPath (Join-Path $root 'dist\SHA256SUMS.txt') -Encoding ascii
-Write-Host "Built $exe"
+$exe = Join-Path $root "dist\Murphy-Waze-$version-Windows-x64-Setup.exe"
+$lines = Get-ChildItem -LiteralPath (Join-Path $root 'dist') -File | Where-Object { $_.Name -like "Murphy-Waze-$version*" } | ForEach-Object { "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" }
+$lines | Set-Content -LiteralPath (Join-Path $root 'dist\SHA256SUMS.txt') -Encoding ascii
+Write-Host "Built $exe and file update"

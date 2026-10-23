@@ -17,7 +17,7 @@ def describe(data):
     """Detected speech is not usable speaker-checked reference audio."""
     parts=[f"Speech detected: {float(data.get('speech') or 0):.1f}s",
            f"Usable reference: {0.0 if data.get('status')=='collecting' else float(data.get('accepted') or 0):.1f}s",
-           'Target: 10–20 seconds of the same voice']
+           'Target: 6–10 seconds combined, or 10–20 seconds continuous; matching voice required']
     if data.get('scanned') is not None:
         scanned=f"Scanned: {float(data['scanned']):.1f}s"
         if data.get('total') is not None:scanned+=f" / {float(data['total']):.1f}s"
