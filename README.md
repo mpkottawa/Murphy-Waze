@@ -6,11 +6,9 @@ Create character-inspired Waze voice packs on your Windows PC: name a voice, con
 
 **[Download the Windows installer](https://github.com/mpkottawa/Murphy-Waze/releases/download/v2.0.00/Murphy-Waze-2.0.00-Windows-x64-Setup.exe)** | [Latest release](https://github.com/mpkottawa/Murphy-Waze/releases/latest) | [Report an issue](https://github.com/mpkottawa/Murphy-Waze/issues)
 
-## Optional saved voice references
+## Private saved voice database
 
-**[Download the saved-reference collection](https://github.com/mpkottawa/Murphy-Waze/releases/download/v2.0.00/Murphy-Waze-Voice-References-2.0.00.zip)** (29 approved reference folders, approximately 10.7 MB). These short audio references let you recreate a saved voice without searching again. They are a separate optional download, not part of the installer.
-
-Extract the ZIP, start a new voice, choose **I have a reference / Use my voice reference**, select that voice's `reference.wav`, and use the whole clip. Paste/create a new script, generate two tests and approve. The archive includes instructions, durations and SHA-256 hashes. No model weights, machine profiles, account data or full generated packs are included. [Voice list and details](docs/VOICE-REFERENCES.md).
+Saved voice references are managed separately in [waze-voice-database](https://github.com/mpkottawa/waze-voice-database). That repository is private for owner review; access is required to browse/download its portable references. The earlier public reference ZIP has been removed. The app installer remains public and does not contain those recordings.
 
 ## Supported computers
 
